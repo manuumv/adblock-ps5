@@ -11,6 +11,8 @@
 #define CFG_MAX_UPSTREAMS 8
 #define CFG_MAX_RULES 256
 #define CFG_MAX_EXCEPTIONS 256
+#define CFG_MAX_BLOCK_MASKS 64
+#define CFG_DEFAULT_MAX_DOMAINS 1500000
 #define CFG_MAX_WARNINGS 32
 #define CFG_WARNING_LEN 160
 
@@ -26,8 +28,13 @@ typedef struct {
 
     rule_t rules[CFG_MAX_RULES];
     size_t rule_count;
-    char exceptions[CFG_MAX_EXCEPTIONS][DNS_NAME_MAX];
+    char exceptions[CFG_MAX_EXCEPTIONS][DNS_NAME_MAX]; /* also the presets' allow masks */
     size_t exception_count;
+
+    int block_nxdomain;   /* block_mode=nxdomain; default null (0.0.0.0 / ::) */
+    size_t max_domains;   /* cap on domains loaded from lists */
+    char block_masks[CFG_MAX_BLOCK_MASKS][DNS_NAME_MAX]; /* from presets */
+    size_t block_mask_count;
 
     /* The first CFG_MAX_WARNINGS warnings; warning_count counts them all. */
     char warnings[CFG_MAX_WARNINGS][CFG_WARNING_LEN];

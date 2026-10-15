@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  * INI layout and defaults follow nanoDNS (c) Drakmor, GPLv3. */
 #include "config.h"
+#include "presets.h"
 
 #include <arpa/inet.h>
 #include <ctype.h>
@@ -35,11 +36,26 @@ static const char DEFAULT_FILE[] =
     "\n"
     "[exceptions]\n"
     "# masks that skip overrides and always go upstream\n"
-    "# *.stun.playstation.net\n";
+    "# *.stun.playstation.net\n"
+    "\n"
+    "[blocking]\n"
+    "# null answers 0.0.0.0 / ::, nxdomain answers \"no such domain\"\n"
+    "block_mode=null\n"
+    "# blocked domains are read from every .txt file in lists/; allowlist.txt wins over them\n"
+    "max_domains=1500000\n"
+    "# preset=update-block   blocks firmware updates and PSN (PSN features stop working)\n";
 
 static const char *DEFAULT_UPSTREAMS[] = {"1.1.1.1", "9.9.9.9"};
 
-enum section { SEC_NONE, SEC_GENERAL, SEC_UPSTREAM, SEC_OVERRIDES, SEC_EXCEPTIONS, SEC_UNKNOWN };
+enum section {
+    SEC_NONE,
+    SEC_GENERAL,
+    SEC_UPSTREAM,
+    SEC_OVERRIDES,
+    SEC_EXCEPTIONS,
+    SEC_BLOCKING,
+    SEC_UNKNOWN
+};
 
 static void warn(config_t *c, unsigned line, const char *fmt, ...) {
     if (c->warning_count < CFG_MAX_WARNINGS) {
@@ -79,6 +95,7 @@ static void set_defaults(config_t *c) {
     inet_pton(AF_INET6, "::1", &c->bind6);
     c->bind6_enabled = 1;
     c->timeout_ms = 1500;
+    c->max_domains = CFG_DEFAULT_MAX_DOMAINS;
     for (size_t i = 0; i < sizeof DEFAULT_UPSTREAMS / sizeof *DEFAULT_UPSTREAMS; i++)
         add_upstream(c, DEFAULT_UPSTREAMS[i]);
 }
@@ -174,6 +191,53 @@ static void parse_exception(config_t *c, unsigned line, const char *mask) {
         c->exception_count++;
 }
 
+static int has_mask(const char (*masks)[DNS_NAME_MAX], size_t n, const char *mask) {
+    for (size_t i = 0; i < n; i++)
+        if (!strcmp(masks[i], mask))
+            return 1;
+    return 0;
+}
+
+/* Appends mask to the list unless it is already there or the list is full. */
+static void add_mask(config_t *c, unsigned line, char (*masks)[DNS_NAME_MAX], size_t *n,
+                     size_t max, const char *mask) {
+    if (has_mask((const char (*)[DNS_NAME_MAX])masks, *n, mask))
+        return;
+    if (*n == max)
+        warn(c, line, "no room for preset mask '%s'", mask);
+    else
+        snprintf(masks[(*n)++], DNS_NAME_MAX, "%s", mask);
+}
+
+static void parse_blocking(config_t *c, unsigned line, const char *key, const char *val) {
+    if (!strcmp(key, "block_mode")) {
+        if (!strcmp(val, "null"))
+            c->block_nxdomain = 0;
+        else if (!strcmp(val, "nxdomain"))
+            c->block_nxdomain = 1;
+        else
+            warn(c, line, "block_mode must be null or nxdomain");
+    } else if (!strcmp(key, "max_domains")) {
+        int v;
+        if (parse_int(val, 1000, 10000000, &v) != 0)
+            warn(c, line, "max_domains must be 1000-10000000");
+        else
+            c->max_domains = (size_t)v;
+    } else if (!strcmp(key, "preset")) {
+        const preset_t *p = preset_find(val);
+        if (!p) {
+            warn(c, line, "unknown preset '%s'", val);
+            return;
+        }
+        for (const char *const *m = p->block; *m; m++)
+            add_mask(c, line, c->block_masks, &c->block_mask_count, CFG_MAX_BLOCK_MASKS, *m);
+        for (const char *const *m = p->allow; *m; m++)
+            add_mask(c, line, c->exceptions, &c->exception_count, CFG_MAX_EXCEPTIONS, *m);
+    } else {
+        warn(c, line, "unknown key '%s'", key);
+    }
+}
+
 static enum section section_of(const char *name) {
     if (!strcmp(name, "general"))
         return SEC_GENERAL;
@@ -183,6 +247,8 @@ static enum section section_of(const char *name) {
         return SEC_OVERRIDES;
     if (!strcmp(name, "exceptions"))
         return SEC_EXCEPTIONS;
+    if (!strcmp(name, "blocking"))
+        return SEC_BLOCKING;
     return SEC_UNKNOWN;
 }
 
@@ -243,6 +309,9 @@ static void parse(FILE *f, config_t *c) {
             break;
         case SEC_OVERRIDES:
             parse_override(c, line, key, val);
+            break;
+        case SEC_BLOCKING:
+            parse_blocking(c, line, key, val);
             break;
         default:
             warn(c, line, "outside of a section");

@@ -64,6 +64,7 @@ static void test_default_file_contents(void) {
     buf[n] = 0;
     assert(strstr(buf, "[general]") && strstr(buf, "[upstream]"));
     assert(strstr(buf, "[overrides]") && strstr(buf, "[exceptions]"));
+    assert(strstr(buf, "[blocking]"));
 }
 
 static void test_comments_and_values(void) {
@@ -166,6 +167,42 @@ static void test_embedded_nul(void) {
     assert(strcmp(ip4(cfg.upstreams[0].sin_addr), "8.8.8.8") == 0);
 }
 
+static int has_exception(const char *mask) {
+    for (size_t i = 0; i < cfg.exception_count; i++)
+        if (!strcmp(cfg.exceptions[i], mask))
+            return 1;
+    return 0;
+}
+
+static void test_blocking_section(void) {
+    unlink(path);
+    assert(config_load(path, &cfg) == 1);
+    assert(cfg.block_nxdomain == 0);
+    assert(cfg.max_domains == 1500000);
+    assert(cfg.block_mask_count == 0);
+
+    write_file("[blocking]\n"             /* 1 */
+               "block_mode=nxdomain\n"    /* 2 */
+               "max_domains=200000\n"     /* 3 */
+               "preset=update-block\n"    /* 4 */
+               "preset=nope\n"            /* 5 */
+               "block_mode=weird\n"       /* 6 */
+               "max_domains=5\n"          /* 7 */
+               "[exceptions]\n"
+               "mine.example\n");
+    assert(config_load(path, &cfg) == 0);
+    assert(cfg.block_nxdomain == 1);
+    assert(cfg.max_domains == 200000);
+    assert(cfg.block_mask_count == 8);
+    assert(has_exception("stun.*.playstation.net") && has_exception("mine.example"));
+    assert(has_warning("line 5") && has_warning("line 6") && has_warning("line 7"));
+    assert(cfg.warning_count == 3);
+
+    write_file("[blocking]\npreset=update-block\npreset=update-block\n");
+    assert(config_load(path, &cfg) == 0);
+    assert(cfg.block_mask_count == 8); /* enabling twice adds nothing */
+}
+
 static void test_unreadable_path(void) {
     assert(config_load("/nonexistent-dir/x/config.ini", &cfg) == -1);
     check_defaults();
@@ -188,6 +225,7 @@ int main(void) {
     test_invalid_lines();
     test_limits();
     test_embedded_nul();
+    test_blocking_section();
     test_unreadable_path();
     unlink(path);
     rmdir(dir);

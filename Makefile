@@ -8,7 +8,8 @@
 
 VERSION := 0.1.0
 
-SRCS := src/dns.c src/rules.c src/config.c src/forward.c src/server.c src/log.c
+SRCS := src/dns.c src/rules.c src/config.c src/forward.c src/server.c src/log.c \
+	src/blocklist.c src/listparse.c src/presets.c
 HDRS := $(wildcard src/*.h)
 CFLAGS_COMMON := -std=c11 -D_DEFAULT_SOURCE -Wall -Wextra -Werror -Isrc \
 	-DADBLOCK_VERSION=\"$(VERSION)\"
@@ -22,7 +23,7 @@ TESTS := $(patsubst tests/%.c,build/host/%,$(wildcard tests/test_*.c))
 FUZZ_CC ?= clang
 FUZZ_SECONDS ?= 600
 
-.PHONY: all host test fuzz ps5 deploy clean
+.PHONY: all host test fuzz fixtures bench ps5 deploy clean
 
 all: host
 
@@ -39,13 +40,29 @@ build/host/test_%: tests/test_%.c $(SRCS) $(HOST_PLAT) $(HDRS)
 test: $(TESTS)
 	@set -e; for t in $(TESTS); do echo "== $$t"; ./$$t; done; echo "all tests passed"
 
-build/fuzz/fuzz_dns: tests/fuzz_dns.c src/dns.c $(HDRS)
-	@mkdir -p $(@D)
-	$(FUZZ_CC) $(CFLAGS_COMMON) -g -O1 -fsanitize=fuzzer,address,undefined -o $@ tests/fuzz_dns.c src/dns.c
+FUZZ ?= dns   # dns or listparse
 
-fuzz: build/fuzz/fuzz_dns
-	@mkdir -p build/fuzz/corpus
-	./build/fuzz/fuzz_dns -max_total_time=$(FUZZ_SECONDS) -max_len=1024 build/fuzz/corpus
+build/fuzz/fuzz_%: tests/fuzz_%.c $(SRCS) $(HDRS)
+	@mkdir -p $(@D)
+	$(FUZZ_CC) $(CFLAGS_COMMON) -g -O1 -fsanitize=fuzzer,address,undefined -o $@ $< src/$*.c
+
+fuzz: build/fuzz/fuzz_$(strip $(FUZZ))
+	@mkdir -p build/fuzz/corpus-$(strip $(FUZZ))
+	./build/fuzz/fuzz_$(strip $(FUZZ)) -max_total_time=$(FUZZ_SECONDS) -max_len=1024 build/fuzz/corpus-$(strip $(FUZZ))
+
+# Real blocklists for the parser tests and the benchmark (git-ignored).
+fixtures:
+	@mkdir -p tests/fixtures
+	curl -fsSL -o tests/fixtures/stevenblack.txt https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+	curl -fsSL -o tests/fixtures/hagezi-pro.txt https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/pro-onlydomains.txt
+	curl -fsSL -o tests/fixtures/hagezi-popupads.txt https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/popupads-onlydomains.txt
+
+build/host/bench_blocklist: tests/bench_blocklist.c $(SRCS) $(HOST_PLAT) $(HDRS)
+	@mkdir -p $(@D)
+	$(HOST_CC) $(CFLAGS_COMMON) -O2 -o $@ $< $(SRCS) $(HOST_PLAT) -lpthread
+
+bench: build/host/bench_blocklist
+	./build/host/bench_blocklist
 
 include platform/ps5/ps5.mk
 

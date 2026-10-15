@@ -1,10 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include <errno.h>
 #include <signal.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 
+#include "blocklist.h"
 #include "config.h"
 #include "log.h"
 #include "platform.h"
@@ -27,11 +30,17 @@ int main(void) {
     if (plat_init() != 0)
         return 1;
 
+    uint8_t key[16];
+    arc4random_buf(key, sizeof key);
+    domain_hash_set_key(key); /* before any thread builds a set */
+
     const char *dir = plat_data_dir();
     if (mkdir(dir, 0755) != 0 && errno != EEXIST)
         fprintf(stderr, "[ps5-adblock] cannot create %s: %s\n", dir, strerror(errno));
 
     char path[512];
+    snprintf(path, sizeof path, "%s/lists", dir);
+    (void)mkdir(path, 0755); /* where users drop blocklists */
     snprintf(path, sizeof path, "%s/config.ini", dir);
     int loaded = config_load(path, &cfg);
     log_set_debug(cfg.debug);
@@ -52,7 +61,7 @@ int main(void) {
     if (((const uint8_t *)&cfg.bind)[0] != 127)
         log_printf("serving the LAN: only private and link-local addresses are answered");
 
-    if (server_open(&srv, &cfg, plat_dns_port()) == 0)
+    if (server_open(&srv, &cfg, plat_dns_port(), dir) == 0)
         log_printf("no listener open yet, retrying every %d ms", LISTENER_RETRY_MS);
 
     while (running)

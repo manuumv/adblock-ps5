@@ -21,3 +21,10 @@ nas.home=192.168.1.10
 
 [exceptions]
 *.stun.playstation.net
+
+[blocking]
+# null answers 0.0.0.0 / ::, nxdomain answers "no such domain"
+block_mode=null
+# blocked domains come from every .txt file in lists/; allowlist.txt wins over them
+max_domains=1500000
+# preset=update-block   blocks firmware updates and PSN (PSN features stop working)

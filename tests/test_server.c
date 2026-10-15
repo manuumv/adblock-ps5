@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <pthread.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -146,6 +147,56 @@ static void test_servfail_when_upstreams_fail(void) {
     close(fd);
 }
 
+static uint16_t u16(const uint8_t *p) { return (uint16_t)(p[0] << 8 | p[1]); }
+
+static void test_block_null_mode(void) {
+    uint8_t q[512], out[512];
+    size_t len = build_query(q, 0x0a01, "x.blocked.example", 1);
+    ssize_t n = exchange(q, len, out);
+    assert(n == (ssize_t)len + 16 && u16(out + 6) == 1 && (out[3] & 0x0f) == 0);
+    assert(memcmp(out + n - 4, "\0\0\0\0", 4) == 0);
+
+    len = build_query(q, 0x0a02, "x.blocked.example", 28);
+    n = exchange(q, len, out);
+    static const uint8_t zero16[16];
+    assert(n == (ssize_t)len + 28 && u16(out + 6) == 1);
+    assert(u16(out + len + 2) == 28 && memcmp(out + n - 16, zero16, 16) == 0);
+
+    len = build_query(q, 0x0a03, "x.blocked.example", 16); /* TXT */
+    n = exchange(q, len, out);
+    assert(n == (ssize_t)len && u16(out + 6) == 0 && (out[3] & 0x0f) == 0);
+}
+
+static void test_block_nxdomain_mode(void) {
+    config_t *c = (config_t *)srv.cfg;
+    c->block_nxdomain = 1;
+    uint8_t q[512], out[512];
+    size_t len = build_query(q, 0x0b01, "blocked.example", 1);
+    ssize_t n = exchange(q, len, out);
+    assert(n == (ssize_t)len && u16(out + 6) == 0 && (out[3] & 0x0f) == 3);
+    c->block_nxdomain = 0;
+}
+
+static void test_counters(void) {
+    server_stats_t before = srv.stats;
+    uint8_t q[512], out[512];
+    size_t len;
+    len = build_query(q, 0x0c01, "blocked.example", 1);
+    assert(exchange(q, len, out) > 0);
+    len = build_query(q, 0x0c02, "example.com", 1);
+    assert(exchange(q, len, out) > 0);
+    len = build_query(q, 0x0c03, "x.ads.example", 1);
+    assert(exchange(q, len, out) > 0);
+    len = build_query(q, 0x0c04, "keep.ads.example", 1);
+    assert(exchange(q, len, out) > 0);
+
+    assert(srv.stats.total == before.total + 4);
+    assert(srv.stats.blocked == before.blocked + 1);
+    assert(srv.stats.overridden == before.overridden + 1);
+    assert(srv.stats.allowlisted == before.allowlisted + 1);
+    assert(srv.stats.forwarded == before.forwarded + 2);
+}
+
 static void test_listener_reopens(void) {
     /* Replace the listener with something that is no longer a socket, as a
      * console suspend can leave it: readable, but recvfrom fails (ENOTSOCK). */
@@ -209,8 +260,15 @@ int main(void) {
     snprintf(cfg.exceptions[0], DNS_NAME_MAX, "keep.ads.example");
     cfg.exception_count = 1;
 
-    assert(server_open(&srv, &cfg, 0) == 1);
+    assert(server_open(&srv, &cfg, 0, NULL) == 1);
     assert(srv.port > 0);
+
+    /* Lists normally come from the builder thread; inject one directly. */
+    blocklist_t *b = calloc(1, sizeof *b);
+    uint64_t *h = malloc(sizeof *h);
+    h[0] = domain_hash("blocked.example", strlen("blocked.example"));
+    set_build(&b->blocked, h, 1);
+    srv.active = b;
     struct sockaddr_in caddr;
     client = udp_on_loopback(&caddr);
 
@@ -221,6 +279,9 @@ int main(void) {
     test_formerr();
     test_short_packet_dropped();
     test_servfail_when_upstreams_fail();
+    test_block_null_mode();
+    test_block_nxdomain_mode();
+    test_counters();
     test_listener_reopens();
 
     server_close(&srv);

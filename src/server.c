@@ -13,6 +13,7 @@
 #include "log.h"
 
 #define OVERRIDE_TTL 60
+#define BLOCK_TTL 60
 
 static int open_listener(server_t *s, listener_t *l) {
     struct sockaddr_storage ss;
@@ -67,10 +68,12 @@ static void invalidate(listener_t *l) {
         l->retry_at = now_ms() + LISTENER_RETRY_MS;
 }
 
-int server_open(server_t *s, const config_t *cfg, int port) {
+int server_open(server_t *s, const config_t *cfg, int port, const char *data_dir) {
     memset(s, 0, sizeof *s);
     s->cfg = cfg;
     s->port = port;
+    s->data_dir = data_dir;
+    s->reload_check_ms = RELOAD_CHECK_MS;
     fwd_init(&s->fwd);
     s->listeners[0] = (listener_t){.fd = -1, .family = AF_INET, .enabled = 1};
     s->listeners[1] = (listener_t){.fd = -1, .family = AF_INET6};
@@ -97,6 +100,74 @@ void server_close(server_t *s) {
         invalidate(&s->listeners[i]);
     }
     fwd_close(&s->fwd);
+    if (s->builder_running) {
+        pthread_join(s->builder, NULL);
+        s->builder_running = 0;
+    }
+    blocklist_free(s->pending);
+    blocklist_free(s->active);
+    s->pending = s->active = NULL;
+}
+
+/* Builder thread: loads the lists into s->pending (NULL if memory ran out). */
+static void *build_lists(void *arg) {
+    server_t *s = arg;
+    int64_t t0 = now_ms();
+    blocklist_t *b = blocklist_load(s->data_dir, s->cfg->max_domains);
+    if (b) {
+        log_printf("loaded %zu domains from %zu list(s) in %lld ms (%zu unsupported, %zu invalid lines), "
+                   "%zu allowlisted",
+                   b->blocked.count, b->files, (long long)(now_ms() - t0), b->stats.unsupported,
+                   b->stats.invalid, b->allowed.count);
+        if (b->truncated)
+            log_printf("lists exceed max_domains=%zu, the rest was skipped", s->cfg->max_domains);
+        if (b->skipped_files)
+            log_printf("only 64 list files are read, %zu skipped", b->skipped_files);
+    } else {
+        log_printf("could not load the lists (unreadable file or no memory), keeping the previous ones");
+    }
+    s->pending = b;
+    atomic_store_explicit(&s->builder_done, 1, memory_order_release);
+    return NULL;
+}
+
+/* Swaps in a finished load, or starts one when the files changed. Runs on the
+ * DNS thread, the only reader of s->active, so the swap needs no lock. */
+static void maybe_reload(server_t *s) {
+    if (!s->data_dir)
+        return;
+    if (s->builder_running) {
+        if (!atomic_load_explicit(&s->builder_done, memory_order_acquire))
+            return;
+        pthread_join(s->builder, NULL);
+        s->builder_running = 0;
+        if (s->pending) {
+            blocklist_free(s->active);
+            s->active = s->pending;
+            s->pending = NULL;
+            log_printf("blocking %zu domains", s->active->blocked.count);
+        } else {
+            /* Retry later even if nothing changes, but not on every check. */
+            s->loaded_print = ~s->loaded_print;
+            s->next_check = now_ms() + 10 * (int64_t)s->reload_check_ms;
+        }
+        return;
+    }
+
+    int64_t now = now_ms();
+    if (s->loaded_once && now < s->next_check)
+        return;
+    s->next_check = now + s->reload_check_ms;
+    uint64_t print = blocklist_fingerprint(s->data_dir);
+    if (s->loaded_once && print == s->loaded_print)
+        return;
+    s->loaded_print = print;
+    s->loaded_once = 1;
+    atomic_store_explicit(&s->builder_done, 0, memory_order_relaxed);
+    if (pthread_create(&s->builder, NULL, build_lists, s) == 0)
+        s->builder_running = 1;
+    else
+        log_printf("cannot start the list loader thread");
 }
 
 static int ipv4_local(const uint8_t *a) {
@@ -129,6 +200,33 @@ static const char *printable(const char *name) {
     return out;
 }
 
+verdict_t server_decide(const config_t *c, const blocklist_t *b, const char *name,
+                        const rule_t **rule) {
+    if (masks_match_any(c->exceptions, c->exception_count, name) ||
+        (b && set_contains_suffix(&b->allowed, name)))
+        return VERDICT_ALLOWLISTED;
+    if ((*rule = rules_find(c->rules, c->rule_count, name)))
+        return VERDICT_OVERRIDE;
+    if ((b && set_contains_suffix(&b->blocked, name)) ||
+        masks_match_any(c->block_masks, c->block_mask_count, name))
+        return VERDICT_BLOCKED;
+    return VERDICT_FORWARD;
+}
+
+/* block_mode=null: A 0.0.0.0, AAAA ::, NODATA for other types.
+ * block_mode=nxdomain: NXDOMAIN for every type. */
+static size_t block_answer(const config_t *c, const uint8_t *pkt, const dns_query_t *q,
+                           uint8_t *out, size_t cap) {
+    static const uint8_t zero[16];
+    if (c->block_nxdomain)
+        return dns_answer(pkt, q, DNS_RCODE_NXDOMAIN, 0, NULL, 0, 0, out, cap);
+    if (q->qtype == DNS_TYPE_A || q->qtype == DNS_TYPE_ANY)
+        return dns_answer(pkt, q, DNS_RCODE_NOERROR, DNS_TYPE_A, zero, 4, BLOCK_TTL, out, cap);
+    if (q->qtype == DNS_TYPE_AAAA)
+        return dns_answer(pkt, q, DNS_RCODE_NOERROR, DNS_TYPE_AAAA, zero, 16, BLOCK_TTL, out, cap);
+    return dns_answer(pkt, q, DNS_RCODE_NOERROR, 0, NULL, 0, 0, out, cap);
+}
+
 /* Decides and builds the answer for one packet. Returns its length, 0 for none. */
 static size_t answer(server_t *s, const uint8_t *pkt, size_t len, uint8_t *out, size_t cap) {
     const config_t *c = s->cfg;
@@ -144,18 +242,33 @@ static size_t answer(server_t *s, const uint8_t *pkt, size_t len, uint8_t *out, 
         return dns_error(pkt, DNS_RCODE_NOTIMP, out, cap);
     }
 
+    s->stats.total++;
+    const rule_t *r = NULL;
+    verdict_t v = q.qclass == DNS_CLASS_IN ? server_decide(c, s->active, q.qname, &r) : VERDICT_FORWARD;
     if (log_debug_enabled())
-        log_printf("query %s type %u", printable(q.qname), q.qtype);
+        log_printf("query %s type %u: %s", printable(q.qname), q.qtype,
+                   v == VERDICT_BLOCKED      ? "blocked"
+                   : v == VERDICT_OVERRIDE   ? "override"
+                   : v == VERDICT_ALLOWLISTED ? "allowlisted"
+                                             : "forwarded");
 
-    if (q.qclass == DNS_CLASS_IN && !masks_match_any(c->exceptions, c->exception_count, q.qname)) {
-        const rule_t *r = rules_find(c->rules, c->rule_count, q.qname);
-        if (r) {
-            if (q.qtype == DNS_TYPE_A || q.qtype == DNS_TYPE_ANY)
-                return dns_answer(pkt, &q, DNS_RCODE_NOERROR, DNS_TYPE_A, r->ip, 4, OVERRIDE_TTL, out, cap);
-            return dns_answer(pkt, &q, DNS_RCODE_NOERROR, 0, NULL, 0, 0, out, cap);
-        }
+    switch (v) {
+    case VERDICT_BLOCKED:
+        s->stats.blocked++;
+        return block_answer(c, pkt, &q, out, cap);
+    case VERDICT_OVERRIDE:
+        s->stats.overridden++;
+        if (q.qtype == DNS_TYPE_A || q.qtype == DNS_TYPE_ANY)
+            return dns_answer(pkt, &q, DNS_RCODE_NOERROR, DNS_TYPE_A, r->ip, 4, OVERRIDE_TTL, out, cap);
+        return dns_answer(pkt, &q, DNS_RCODE_NOERROR, 0, NULL, 0, 0, out, cap);
+    case VERDICT_ALLOWLISTED:
+        s->stats.allowlisted++;
+        break;
+    case VERDICT_FORWARD:
+        break;
     }
 
+    s->stats.forwarded++;
     int via;
     size_t n = fwd_query(&s->fwd, c->upstreams, c->upstream_count, c->timeout_ms, pkt, len,
                          q.question_end, out, cap, &via);
@@ -219,10 +332,11 @@ void server_poll(server_t *s, int timeout_ms) {
         }
     }
 
+    maybe_reload(s);
+    if (s->builder_running && timeout_ms > 50)
+        timeout_ms = 50; /* swap the new lists in as soon as they are ready */
     int rc = poll(count ? pfd : NULL, count, timeout_ms);
-    if (rc <= 0)
-        return;
-    for (nfds_t i = 0; i < count; i++) {
+    for (nfds_t i = 0; rc > 0 && i < count; i++) {
         if (pfd[i].revents & (POLLERR | POLLHUP | POLLNVAL)) {
             log_printf("listener lost, reopening");
             invalidate(by_slot[i]);
@@ -230,4 +344,5 @@ void server_poll(server_t *s, int timeout_ms) {
             serve_one(s, by_slot[i]);
         }
     }
+    maybe_reload(s);
 }

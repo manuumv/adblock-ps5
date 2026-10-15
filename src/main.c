@@ -7,12 +7,12 @@
 #include <string.h>
 #include <sys/stat.h>
 
-#include "blocklist.h"
-#include "config.h"
-#include "log.h"
-#include "platform.h"
-#include "runtime.h"
-#include "server.h"
+#include "blocking/blocklist.h"
+#include "core/config.h"
+#include "core/log.h"
+#include "core/platform.h"
+#include "console/runtime.h"
+#include "dns/server.h"
 
 #define TAKE_OVER_MS 5000
 

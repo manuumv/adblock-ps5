@@ -9,9 +9,9 @@
 
 VERSION := 0.1.0
 
-SRCS := src/dns.c src/rules.c src/config.c src/forward.c src/server.c src/log.c \
-	src/blocklist.c src/listparse.c src/presets.c src/runtime.c
-HDRS := $(wildcard src/*.h)
+# src/<module>/*.c, one folder per responsibility (see README "Source layout").
+SRCS := $(wildcard src/*/*.c)
+HDRS := $(wildcard src/*/*.h)
 CFLAGS_COMMON := -std=c11 -D_DEFAULT_SOURCE -Wall -Wextra -Werror -Isrc \
 	-DADBLOCK_VERSION=\"$(VERSION)\"
 
@@ -19,7 +19,9 @@ HOST_CC ?= cc
 SAN := -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all -g
 HOST_PLAT := platform/host/platform.c
 
-TESTS := $(patsubst tests/%.c,build/host/%,$(wildcard tests/test_*.c))
+# tests/<module>/test_*.c mirror src/; vpath lets one rule build them all.
+TESTS := $(patsubst %.c,build/host/%,$(notdir $(wildcard tests/*/test_*.c)))
+vpath %.c $(sort $(dir $(wildcard tests/*/)))
 
 FUZZ_CC ?= clang
 FUZZ_SECONDS ?= 600
@@ -34,7 +36,7 @@ build/host/ps5-adblock: $(SRCS) src/main.c $(HOST_PLAT) $(HDRS)
 	@mkdir -p $(@D)
 	$(HOST_CC) $(CFLAGS_COMMON) -O1 $(SAN) -o $@ $(SRCS) src/main.c $(HOST_PLAT) -lpthread
 
-build/host/test_%: tests/test_%.c $(SRCS) $(HOST_PLAT) $(HDRS)
+build/host/test_%: test_%.c $(SRCS) $(HOST_PLAT) $(HDRS)
 	@mkdir -p $(@D)
 	$(HOST_CC) $(CFLAGS_COMMON) -O1 $(SAN) -o $@ $< $(SRCS) $(HOST_PLAT) -lpthread
 
@@ -43,9 +45,9 @@ test: $(TESTS)
 
 FUZZ ?= dns   # dns or listparse
 
-build/fuzz/fuzz_%: tests/fuzz_%.c $(SRCS) $(HDRS)
+build/fuzz/fuzz_%: fuzz_%.c $(SRCS) $(HOST_PLAT) $(HDRS)
 	@mkdir -p $(@D)
-	$(FUZZ_CC) $(CFLAGS_COMMON) -g -O1 -fsanitize=fuzzer,address,undefined -o $@ $< src/$*.c
+	$(FUZZ_CC) $(CFLAGS_COMMON) -g -O1 -fsanitize=fuzzer,address,undefined -o $@ $< $(SRCS) $(HOST_PLAT) -lpthread
 
 fuzz: build/fuzz/fuzz_$(strip $(FUZZ))
 	@mkdir -p build/fuzz/corpus-$(strip $(FUZZ))
@@ -58,7 +60,7 @@ fixtures:
 	curl -fsSL -o tests/fixtures/hagezi-pro.txt https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/pro-onlydomains.txt
 	curl -fsSL -o tests/fixtures/hagezi-popupads.txt https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/popupads-onlydomains.txt
 
-build/host/bench_blocklist: tests/bench_blocklist.c $(SRCS) $(HOST_PLAT) $(HDRS)
+build/host/bench_blocklist: bench_blocklist.c $(SRCS) $(HOST_PLAT) $(HDRS)
 	@mkdir -p $(@D)
 	$(HOST_CC) $(CFLAGS_COMMON) -O2 -o $@ $< $(SRCS) $(HOST_PLAT) -lpthread
 

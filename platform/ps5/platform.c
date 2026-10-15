@@ -2,7 +2,7 @@
  * platform.h for the PS5 (etaHEN / onionHEN, ps5-payload-dev SDK).
  * Process naming, AuthID, libSceNet setup, the process list and notifications
  * adapted from nanoDNS (c) Drakmor. GPLv3. */
-#include "platform.h"
+#include "core/platform.h"
 
 #include <signal.h>
 #include <stdarg.h>

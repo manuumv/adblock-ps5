@@ -6,7 +6,7 @@
  *   ADBLOCK_PEER_PID   PID of a "previous instance" for plat_find_pid
  *   ADBLOCK_HEN_DIRS   comma-separated HEN payload folders
  *   ADBLOCK_COPIES     comma-separated payload manager copies */
-#include "platform.h"
+#include "core/platform.h"
 
 #include <signal.h>
 #include <stdarg.h>

@@ -137,6 +137,23 @@ nas.home=192.168.1.10
 *.stun.playstation.net
 ```
 
+## Source layout
+
+```text
+src/
+├── main.c      startup: wires the modules together and runs the loop
+├── core/       config.ini parsing, in-memory log, platform interface (platform.h)
+├── dns/        wire format (dns.c), upstream forwarding (forward.c), server loop and decisions (server.c)
+├── blocking/   blocklists (blocklist.c), list file formats (listparse.c), masks (rules.c), presets
+└── console/    single instance, HEN autostart, notifications, log persistence (runtime.c)
+platform/
+├── ps5/        platform.h on the console, SDK make rules, Docker image
+└── host/       platform.h for macOS/Linux development
+tests/          one folder per src/ module: test_*.c (unit and integration), fuzz_*.c, bench_*.c
+```
+
+`src/` never includes console headers: only `platform/ps5/platform.c` does, so every module builds and runs its tests on a computer.
+
 ## Credits
 
 - [nanoDNS](https://github.com/drakmor/nanoDNS) by Drakmor: the DNS proxy and console integration this project grew from.

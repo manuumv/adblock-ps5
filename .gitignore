@@ -1,0 +1,11 @@
+build/
+dist/
+*.elf
+*.o
+*.d
+tests/fixtures/
+data/
+crash-*
+leak-*
+timeout-*
+.DS_Store

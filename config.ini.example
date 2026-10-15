@@ -1,0 +1,23 @@
+# ps5-adblock example configuration. Copy to /data/ps5-adblock/config.ini.
+# See docs/config.md for every key.
+
+[general]
+debug=0
+# 0.0.0.0 serves every device on the LAN, not just the console
+bind=127.0.0.1
+# IPv6 listener address, or off
+bind6=::1
+
+[upstream]
+# tried in order; timeout_ms is the total budget for one query
+server=1.1.1.1
+server=9.9.9.9
+timeout_ms=1500
+
+[overrides]
+# mask=IPv4
+*.doubleclick.net=0.0.0.0
+nas.home=192.168.1.10
+
+[exceptions]
+*.stun.playstation.net

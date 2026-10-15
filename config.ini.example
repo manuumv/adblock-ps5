@@ -32,3 +32,10 @@ block_mode=null
 # blocked domains come from every .txt file in lists/; allowlist.txt wins over them
 max_domains=1500000
 # preset=update-block   blocks firmware updates and PSN (PSN features stop working)
+
+[lists]
+# url=<name>|<https url>: downloaded to lists/<name>.txt and kept up to date
+url=hagezi-pro|https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/pro-onlydomains.txt
+url=hagezi-popupads|https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/popupads-onlydomains.txt
+# hours between checks, 0 never downloads
+update_hours=24

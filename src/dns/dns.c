@@ -109,6 +109,82 @@ size_t dns_answer(const uint8_t *req, const dns_query_t *q, uint16_t rcode,
     return n;
 }
 
+size_t dns_build_query(uint16_t id, const char *name, uint16_t qtype, uint8_t *out, size_t cap) {
+    if (cap < DNS_HEADER_LEN)
+        return 0;
+    memset(out, 0, DNS_HEADER_LEN);
+    wr16(out, id);
+    wr16(out + 2, 0x0100); /* RD */
+    wr16(out + 4, 1);
+
+    size_t off = DNS_HEADER_LEN;
+    const char *p = name;
+    while (*p) {
+        const char *dot = strchr(p, '.');
+        size_t l = dot ? (size_t)(dot - p) : strlen(p);
+        if (l == 0 || l > 63 || off + 1 + l - DNS_HEADER_LEN > MAX_WIRE_NAME - 1 || off + 1 + l >= cap)
+            return 0;
+        out[off++] = (uint8_t)l;
+        for (size_t i = 0; i < l; i++) {
+            char c = p[i];
+            out[off++] = (uint8_t)(c >= 'A' && c <= 'Z' ? c + 32 : c);
+        }
+        p += l;
+        if (*p == '.')
+            p++;
+    }
+    if (off + 5 > cap)
+        return 0;
+    out[off++] = 0;
+    wr16(out + off, qtype);
+    wr16(out + off + 2, DNS_CLASS_IN);
+    return off + 4;
+}
+
+/* Moves *off past a (possibly compressed) name without following pointers. */
+static int skip_name(const uint8_t *pkt, size_t len, size_t *off) {
+    while (*off < len) {
+        uint8_t l = pkt[*off];
+        if ((l & 0xc0) == 0xc0) {
+            if (*off + 2 > len)
+                return -1;
+            *off += 2;
+            return 0;
+        }
+        if (l & 0xc0)
+            return -1;
+        *off += 1 + (size_t)l;
+        if (l == 0)
+            return 0;
+    }
+    return -1;
+}
+
+int dns_first_a(const uint8_t *resp, size_t len, uint8_t ip[4]) {
+    if (len < DNS_HEADER_LEN || !(resp[2] & 0x80) || (resp[3] & 0x0f) != DNS_RCODE_NOERROR)
+        return -1;
+    size_t off = DNS_HEADER_LEN;
+    for (uint16_t q = rd16(resp + 4); q; q--) {
+        if (skip_name(resp, len, &off) != 0 || off + 4 > len)
+            return -1;
+        off += 4;
+    }
+    for (uint16_t a = rd16(resp + 6); a; a--) {
+        if (skip_name(resp, len, &off) != 0 || off + 10 > len)
+            return -1;
+        uint16_t type = rd16(resp + off), class = rd16(resp + off + 2), rdlen = rd16(resp + off + 8);
+        off += 10;
+        if (off + rdlen > len)
+            return -1;
+        if (type == DNS_TYPE_A && class == DNS_CLASS_IN && rdlen == 4) {
+            memcpy(ip, resp + off, 4);
+            return 0;
+        }
+        off += rdlen;
+    }
+    return -1;
+}
+
 size_t dns_error(const uint8_t *req, uint16_t rcode, uint8_t *out, size_t cap) {
     if (cap < DNS_HEADER_LEN)
         return 0;

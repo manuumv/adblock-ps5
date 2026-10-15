@@ -13,12 +13,15 @@
 #include "core/platform.h"
 #include "console/runtime.h"
 #include "dns/server.h"
+#include "updates/http.h"
+#include "updates/updater.h"
 
 #define TAKE_OVER_MS 5000
 
 static volatile sig_atomic_t running = 1;
 static config_t cfg; /* large: static, not on the stack */
 static server_t srv;
+static updater_t updater;
 
 static void on_signal(int sig) {
     (void)sig;
@@ -32,6 +35,8 @@ int main(void) {
 
     if (plat_init() != 0)
         return 1;
+
+    http_init(); /* libcurl's global init is not thread-safe: before any thread starts */
 
     uint8_t key[16];
     arc4random_buf(key, sizeof key);
@@ -88,12 +93,16 @@ int main(void) {
     if (server_open(&srv, &cfg, plat_dns_port(), dir) == 0)
         log_printf("no listener open yet, retrying every %d ms", LISTENER_RETRY_MS);
 
+    updater_init(&updater, &cfg, dir);
+    (void)updater_start(&updater);
+
     while (running) {
         server_poll(&srv, 1000);
         runtime_log_tick(now_ms());
     }
 
     log_printf("shutting down");
+    updater_stop(&updater);
     server_close(&srv);
     runtime_log_flush();
     plat_fini();

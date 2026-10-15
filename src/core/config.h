@@ -13,6 +13,15 @@
 #define CFG_MAX_EXCEPTIONS 256
 #define CFG_MAX_BLOCK_MASKS 64
 #define CFG_DEFAULT_MAX_DOMAINS 1500000
+#define CFG_MAX_LISTS 16
+#define CFG_LIST_NAME_MAX 32
+#define CFG_LIST_URL_MAX 512
+
+/* A blocklist downloaded to lists/<name>.txt. */
+typedef struct {
+    char name[CFG_LIST_NAME_MAX]; /* [a-z0-9_-]+ */
+    char url[CFG_LIST_URL_MAX];   /* https:// only */
+} list_source_t;
 #define CFG_MAX_WARNINGS 32
 #define CFG_WARNING_LEN 160
 
@@ -37,6 +46,10 @@ typedef struct {
     size_t max_domains;   /* cap on domains loaded from lists */
     char block_masks[CFG_MAX_BLOCK_MASKS][DNS_NAME_MAX]; /* from presets */
     size_t block_mask_count;
+
+    list_source_t lists[CFG_MAX_LISTS];
+    size_t list_count;
+    int update_hours; /* 0: never download */
 
     /* The first CFG_MAX_WARNINGS warnings; warning_count counts them all. */
     char warnings[CFG_MAX_WARNINGS][CFG_WARNING_LEN];

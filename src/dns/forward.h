@@ -12,7 +12,10 @@
 typedef struct {
     int fd[CFG_MAX_UPSTREAMS]; /* one connected socket per upstream, -1 until first use */
     struct sockaddr_in peer[CFG_MAX_UPSTREAMS]; /* what fd[i] is connected to */
+    uint8_t sent[DNS_MAX_PACKET]; /* the query as sent, with its random ID */
 } forwarder_t;
+
+/* One forwarder per thread: it is not safe to share. */
 
 void fwd_init(forwarder_t *f);
 void fwd_close(forwarder_t *f);

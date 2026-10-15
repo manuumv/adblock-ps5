@@ -79,11 +79,11 @@ static int is_answer_to(const uint8_t *resp, size_t n, const uint8_t *sent, size
 size_t fwd_query(forwarder_t *f, const struct sockaddr_in *upstreams, size_t n, int timeout_ms,
                  const uint8_t *req, size_t len, size_t question_end, uint8_t *out, size_t cap,
                  int *via) {
-    static uint8_t sent[DNS_MAX_PACKET]; /* single-threaded caller */
+    uint8_t *sent = f->sent;
     int64_t start = now_ms();
     if (n > CFG_MAX_UPSTREAMS)
         n = CFG_MAX_UPSTREAMS;
-    if (len > sizeof sent || question_end < DNS_HEADER_LEN || question_end > len)
+    if (len > sizeof f->sent || question_end < DNS_HEADER_LEN || question_end > len)
         return 0;
 
     /* The client chose its ID and so knows it; upstreams see a random one, so

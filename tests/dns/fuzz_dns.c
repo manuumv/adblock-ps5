@@ -10,6 +10,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     uint8_t out[DNS_MAX_PACKET];
     static const uint8_t ip6[16];
 
+    uint8_t ip[4];
+    (void)dns_first_a(data, size, ip); /* upstream responses are untrusted too */
+
     int rc = dns_parse_query(data, size, &q);
     if (rc == DNS_OK) {
         size_t n = strlen(q.qname);

@@ -47,7 +47,14 @@ static const char DEFAULT_FILE[] =
     "block_mode=null\n"
     "# blocked domains are read from every .txt file in lists/; allowlist.txt wins over them\n"
     "max_domains=1500000\n"
-    "# preset=update-block   blocks firmware updates and PSN (PSN features stop working)\n";
+    "# preset=update-block   blocks firmware updates and PSN (PSN features stop working)\n"
+    "\n"
+    "[lists]\n"
+    "# url=<name>|<https url>: downloaded to lists/<name>.txt and kept up to date\n"
+    "url=hagezi-pro|https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/pro-onlydomains.txt\n"
+    "url=hagezi-popupads|https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/popupads-onlydomains.txt\n"
+    "# hours between checks, 0 never downloads\n"
+    "update_hours=24\n";
 
 static const char *DEFAULT_UPSTREAMS[] = {"1.1.1.1", "9.9.9.9"};
 
@@ -58,6 +65,7 @@ enum section {
     SEC_OVERRIDES,
     SEC_EXCEPTIONS,
     SEC_BLOCKING,
+    SEC_LISTS,
     SEC_UNKNOWN
 };
 
@@ -101,6 +109,7 @@ static void set_defaults(config_t *c) {
     c->timeout_ms = 1500;
     c->max_domains = CFG_DEFAULT_MAX_DOMAINS;
     c->autostart = 1;
+    c->update_hours = 24;
     for (size_t i = 0; i < sizeof DEFAULT_UPSTREAMS / sizeof *DEFAULT_UPSTREAMS; i++)
         add_upstream(c, DEFAULT_UPSTREAMS[i]);
 }
@@ -249,6 +258,51 @@ static void parse_blocking(config_t *c, unsigned line, const char *key, const ch
     }
 }
 
+static int valid_list_name(const char *s, size_t n) {
+    if (n == 0 || n >= CFG_LIST_NAME_MAX)
+        return 0;
+    for (size_t i = 0; i < n; i++)
+        if (!((s[i] >= 'a' && s[i] <= 'z') || (s[i] >= '0' && s[i] <= '9') || s[i] == '-' || s[i] == '_'))
+            return 0;
+    return 1;
+}
+
+static int valid_list_url(const char *url) {
+    size_t n = strlen(url);
+    if (n >= CFG_LIST_URL_MAX || strncmp(url, "https://", 8) != 0 || n == 8)
+        return 0;
+    for (size_t i = 0; i < n; i++)
+        if ((unsigned char)url[i] <= ' ' || url[i] == 0x7f)
+            return 0;
+    return 1;
+}
+
+static void parse_lists(config_t *c, unsigned line, const char *key, const char *val) {
+    if (!strcmp(key, "update_hours")) {
+        if (parse_int(val, 0, 720, &c->update_hours) != 0)
+            warn(c, line, "update_hours must be 0-720");
+        return;
+    }
+    if (strcmp(key, "url") != 0) {
+        warn(c, line, "unknown key '%s'", key);
+        return;
+    }
+    const char *bar = strchr(val, '|');
+    if (!bar) {
+        warn(c, line, "expected url=<name>|<https url>");
+    } else if (!valid_list_name(val, (size_t)(bar - val))) {
+        warn(c, line, "list name must be 1-31 of a-z 0-9 - _");
+    } else if (!valid_list_url(bar + 1)) {
+        warn(c, line, "list url must be https:// with no spaces");
+    } else if (c->list_count == CFG_MAX_LISTS) {
+        warn(c, line, "more than %d lists, ignored", CFG_MAX_LISTS);
+    } else {
+        list_source_t *l = &c->lists[c->list_count++];
+        snprintf(l->name, sizeof l->name, "%.*s", (int)(bar - val), val);
+        snprintf(l->url, sizeof l->url, "%s", bar + 1);
+    }
+}
+
 static enum section section_of(const char *name) {
     if (!strcmp(name, "general"))
         return SEC_GENERAL;
@@ -260,6 +314,8 @@ static enum section section_of(const char *name) {
         return SEC_EXCEPTIONS;
     if (!strcmp(name, "blocking"))
         return SEC_BLOCKING;
+    if (!strcmp(name, "lists"))
+        return SEC_LISTS;
     return SEC_UNKNOWN;
 }
 
@@ -323,6 +379,9 @@ static void parse(FILE *f, config_t *c) {
             break;
         case SEC_BLOCKING:
             parse_blocking(c, line, key, val);
+            break;
+        case SEC_LISTS:
+            parse_lists(c, line, key, val);
             break;
         default:
             warn(c, line, "outside of a section");

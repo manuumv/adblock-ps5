@@ -49,6 +49,15 @@ size_t dns_answer(const uint8_t *req, const dns_query_t *q, uint16_t rcode,
                   uint16_t rtype, const void *rdata, uint16_t rdlen, uint32_t ttl,
                   uint8_t *out, size_t cap);
 
+/* A recursive query (RD set) for name and qtype, for resolving on our own
+ * behalf. Returns its length, 0 if name is invalid or cap too small. */
+size_t dns_build_query(uint16_t id, const char *name, uint16_t qtype, uint8_t *out, size_t cap);
+
+/* Copies the first A record of a NOERROR response into ip. 0 on success, -1
+ * if there is none or the packet is malformed. Compressed names are skipped,
+ * never followed. */
+int dns_first_a(const uint8_t *resp, size_t len, uint8_t ip[4]);
+
 /* Header-only answer (no question) for a query that could not be parsed.
  * req must hold at least DNS_HEADER_LEN bytes. Returns the length, 0 if cap is
  * too small. */

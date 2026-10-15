@@ -16,6 +16,7 @@ CFLAGS_COMMON := -std=c11 -D_DEFAULT_SOURCE -Wall -Wextra -Werror -Isrc \
 	-DADBLOCK_VERSION=\"$(VERSION)\"
 
 HOST_CC ?= cc
+HOST_LIBS := -lpthread -lcurl
 SAN := -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all -g
 HOST_PLAT := platform/host/platform.c
 
@@ -34,11 +35,11 @@ host: build/host/ps5-adblock
 
 build/host/ps5-adblock: $(SRCS) src/main.c $(HOST_PLAT) $(HDRS)
 	@mkdir -p $(@D)
-	$(HOST_CC) $(CFLAGS_COMMON) -O1 $(SAN) -o $@ $(SRCS) src/main.c $(HOST_PLAT) -lpthread
+	$(HOST_CC) $(CFLAGS_COMMON) -O1 $(SAN) -o $@ $(SRCS) src/main.c $(HOST_PLAT) $(HOST_LIBS)
 
 build/host/test_%: test_%.c $(SRCS) $(HOST_PLAT) $(HDRS)
 	@mkdir -p $(@D)
-	$(HOST_CC) $(CFLAGS_COMMON) -O1 $(SAN) -o $@ $< $(SRCS) $(HOST_PLAT) -lpthread
+	$(HOST_CC) $(CFLAGS_COMMON) -Itests -O1 $(SAN) -o $@ $< $(SRCS) $(HOST_PLAT) $(HOST_LIBS)
 
 test: $(TESTS)
 	@set -e; for t in $(TESTS); do echo "== $$t"; ./$$t; done; echo "all tests passed"
@@ -47,7 +48,7 @@ FUZZ ?= dns   # dns or listparse
 
 build/fuzz/fuzz_%: fuzz_%.c $(SRCS) $(HOST_PLAT) $(HDRS)
 	@mkdir -p $(@D)
-	$(FUZZ_CC) $(CFLAGS_COMMON) -g -O1 -fsanitize=fuzzer,address,undefined -o $@ $< $(SRCS) $(HOST_PLAT) -lpthread
+	$(FUZZ_CC) $(CFLAGS_COMMON) -g -O1 -fsanitize=fuzzer,address,undefined -o $@ $< $(SRCS) $(HOST_PLAT) $(HOST_LIBS)
 
 fuzz: build/fuzz/fuzz_$(strip $(FUZZ))
 	@mkdir -p build/fuzz/corpus-$(strip $(FUZZ))
@@ -62,7 +63,7 @@ fixtures:
 
 build/host/bench_blocklist: bench_blocklist.c $(SRCS) $(HOST_PLAT) $(HDRS)
 	@mkdir -p $(@D)
-	$(HOST_CC) $(CFLAGS_COMMON) -O2 -o $@ $< $(SRCS) $(HOST_PLAT) -lpthread
+	$(HOST_CC) $(CFLAGS_COMMON) -O2 -o $@ $< $(SRCS) $(HOST_PLAT) $(HOST_LIBS)
 
 bench: build/host/bench_blocklist
 	./build/host/bench_blocklist

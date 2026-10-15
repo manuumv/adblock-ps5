@@ -213,6 +213,44 @@ static void test_runtime_keys(void) {
     assert(has_warning("line 4") && cfg.warning_count == 1);
 }
 
+static void test_lists_section(void) {
+    /* A newly created config enables the two default lists. */
+    unlink(path);
+    assert(config_load(path, &cfg) == 1);
+    assert(cfg.list_count == 2 && cfg.update_hours == 24);
+    assert(!strcmp(cfg.lists[0].name, "hagezi-pro"));
+    assert(!strcmp(cfg.lists[0].url,
+                   "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/pro-onlydomains.txt"));
+    assert(!strcmp(cfg.lists[1].name, "hagezi-popupads"));
+
+    /* An existing config without [lists] gets none added. */
+    write_file("[general]\ndebug=0\n");
+    assert(config_load(path, &cfg) == 0 && cfg.list_count == 0);
+
+    write_file("[lists]\n"                                   /* 1 */
+               "url=mine|https://example.org/list.txt\n"     /* 2 */
+               "url=plain|http://example.org/list.txt\n"     /* 3: not https */
+               "url=Bad Name|https://example.org/x.txt\n"    /* 4 */
+               "url=nopipe\n"                                /* 5 */
+               "url=sp|https://example.org/a b.txt\n"        /* 6: space in url */
+               "update_hours=0\n"                            /* 7 */
+               "update_hours=abc\n");                        /* 8 */
+    assert(config_load(path, &cfg) == 0);
+    assert(cfg.list_count == 1 && !strcmp(cfg.lists[0].name, "mine"));
+    assert(cfg.update_hours == 0);
+    assert(has_warning("line 3") && has_warning("line 4") && has_warning("line 5"));
+    assert(has_warning("line 6") && has_warning("line 8") && cfg.warning_count == 5);
+
+    char text[4096] = "[lists]\n";
+    for (int i = 0; i < CFG_MAX_LISTS + 2; i++) {
+        char line[96];
+        snprintf(line, sizeof line, "url=l%d|https://example.org/%d.txt\n", i, i);
+        strcat(text, line);
+    }
+    write_file(text);
+    assert(config_load(path, &cfg) == 0 && cfg.list_count == CFG_MAX_LISTS && cfg.warning_count == 2);
+}
+
 static void test_unreadable_path(void) {
     assert(config_load("/nonexistent-dir/x/config.ini", &cfg) == -1);
     check_defaults();
@@ -237,6 +275,7 @@ int main(void) {
     test_embedded_nul();
     test_blocking_section();
     test_runtime_keys();
+    test_lists_section();
     test_unreadable_path();
     unlink(path);
     rmdir(dir);

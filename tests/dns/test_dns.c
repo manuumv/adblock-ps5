@@ -202,6 +202,59 @@ static void test_build_formerr(void) {
     assert(u16(out + 4) == 0 && u16(out + 6) == 0);
 }
 
+static void test_build_query(void) {
+    uint8_t q[512];
+    size_t n = dns_build_query(0xabcd, "List.Example.COM", DNS_TYPE_A, q, sizeof q);
+    assert(n == 12 + 18 + 4);
+    dns_query_t parsed;
+    assert(dns_parse_query(q, n, &parsed) == DNS_OK);
+    assert(parsed.id == 0xabcd && parsed.flags == 0x0100); /* RD */
+    assert(!strcmp(parsed.qname, "list.example.com") && parsed.qtype == DNS_TYPE_A);
+
+    assert(dns_build_query(1, "a..b", DNS_TYPE_A, q, sizeof q) == 0);  /* empty label */
+    assert(dns_build_query(1, "example.com", DNS_TYPE_A, q, 20) == 0); /* too small */
+    char label[80];
+    memset(label, 'a', 64);
+    strcpy(label + 64, ".com");
+    assert(dns_build_query(1, label, DNS_TYPE_A, q, sizeof q) == 0);   /* label > 63 */
+}
+
+/* Response to the query built for "list.example.com": CNAME then A, both
+ * using compression pointers, as real resolvers answer. */
+static size_t make_response(uint8_t *r, int with_a) {
+    size_t n = dns_build_query(0x1111, "list.example.com", DNS_TYPE_A, r, 512);
+    r[2] |= 0x80;
+    r[7] = with_a ? 2 : 1; /* ANCOUNT */
+    static const uint8_t cname[] = {
+        0xc0, 12, 0, 5, 0, 1, 0, 0, 0, 60, 0, 6, 3, 'c', 'd', 'n', 0xc0, 17, /* cdn.example.com */
+    };
+    memcpy(r + n, cname, sizeof cname);
+    n += sizeof cname;
+    if (with_a) {
+        static const uint8_t a[] = {0xc0, 46, 0, 1, 0, 1, 0, 0, 0, 60, 0, 4, 185, 199, 108, 133};
+        memcpy(r + n, a, sizeof a);
+        n += sizeof a;
+    }
+    return n;
+}
+
+static void test_first_a(void) {
+    uint8_t r[512], ip[4];
+    size_t n = make_response(r, 1);
+    assert(dns_first_a(r, n, ip) == 0);
+    assert(ip[0] == 185 && ip[1] == 199 && ip[2] == 108 && ip[3] == 133);
+
+    n = make_response(r, 0);
+    assert(dns_first_a(r, n, ip) == -1); /* only a CNAME */
+
+    n = make_response(r, 1);
+    for (size_t cut = 0; cut < n; cut++)
+        assert(dns_first_a(r, cut, ip) == -1); /* every truncation is rejected */
+
+    r[3] = (uint8_t)((r[3] & 0xf0) | DNS_RCODE_NXDOMAIN);
+    assert(dns_first_a(r, n, ip) == -1);
+}
+
 int main(void) {
     test_simple_question();
     test_compressed_name_rejected();
@@ -221,6 +274,8 @@ int main(void) {
     test_build_nodata_and_servfail();
     test_build_too_small();
     test_build_formerr();
+    test_build_query();
+    test_first_a();
     puts("test_dns: ok");
     return 0;
 }

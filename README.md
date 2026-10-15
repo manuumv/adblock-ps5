@@ -2,7 +2,7 @@
 
 A DNS-based ad and telemetry blocker that runs on a jailbroken PS5. It is a payload: the console's DNS points at itself (`127.0.0.1`) and ps5-adblock decides which names to answer locally and which to forward to a real resolver.
 
-> **Status: early.** DNS blocking with lists of up to millions of domains, an allowlist, live reloads and autostart with etaHEN/onionHEN. A web dashboard, an installer and automatic list downloads are on the way.
+> **Status: early.** DNS blocking with lists of up to millions of domains that download and update themselves, an allowlist, live reloads and autostart with etaHEN/onionHEN.
 
 ## What DNS blocking can and cannot do
 
@@ -12,7 +12,7 @@ A DNS-based ad and telemetry blocker that runs on a jailbroken PS5. It is a payl
 ## Requirements
 
 - A jailbroken PS5 running etaHEN or onionHEN, with an ELF loader on port 9021.
-- To build: Docker, or the [ps5-payload-sdk](https://github.com/ps5-payload-dev/sdk) with LLVM 18.
+- To build: Docker, or the [ps5-payload-sdk](https://github.com/ps5-payload-dev/sdk) with LLVM 18 and the pacbrew libraries (libcurl). Host builds need libcurl, and the tests need python3 and openssl.
 
 ## Build
 
@@ -80,14 +80,16 @@ dig @127.0.0.1 -p 5300 example.com
 
 ## Blocking
 
-ps5-adblock blocks every domain listed in the `.txt` files under `/data/ps5-adblock/lists/`, and every subdomain of them. Copy lists there over FTP; changes are picked up within 30 seconds, with no restart and without interrupting DNS.
+ps5-adblock blocks every domain listed in the `.txt` files under `/data/ps5-adblock/lists/`, and every subdomain of them. Changes are picked up within 30 seconds, with no restart and without interrupting DNS.
 
-Recommended for the PS5 browser (ads on pages and pop-up/pop-under ad tabs):
+**Lists download themselves.** A new `config.ini` comes with two lists chosen for the PS5 browser (ads on pages and pop-up/pop-under ad tabs). Two minutes after the first start they are downloaded into `lists/`, a notification confirms each one, and they are checked again every `update_hours` (24 by default):
 
-| List | Domains | URL |
+| `[lists]` entry | Domains | Source |
 |---|---|---|
-| HaGeZi Pro | ~200k | `https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/pro-onlydomains.txt` |
-| HaGeZi Pop-Up Ads | ~46k | `https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/popupads-onlydomains.txt` |
+| `url=hagezi-pro\|…` | ~200k | `https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/pro-onlydomains.txt` |
+| `url=hagezi-popupads\|…` | ~46k | `https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/popupads-onlydomains.txt` |
+
+Add your own as `url=<name>|<https url>` (name: `a-z 0-9 - _`); each is saved as `lists/<name>.txt`. Downloads use HTTPS with certificate checks and never plain HTTP, redirects included; unchanged lists are not downloaded again; a failed download keeps the previous copy and shows one notification until the list works again. **The console's date and time must be right**, or certificates look invalid (the notification says so). You can still copy any list into `lists/` over FTP yourself.
 
 Three line formats are understood: hosts file entries, one domain per line, and Adblock-style domain rules. Lines starting with `#` or `!` are comments.
 
@@ -125,6 +127,8 @@ Adblock rules that need a browser (element hiding `##`, `$third-party`, paths, r
 | `[blocking]` | `block_mode` | `null` | `null` answers `0.0.0.0` / `::`; `nxdomain` answers "no such domain" |
 | | `max_domains` | `1500000` | Cap on domains loaded from `lists/` (1000–10000000). About 8 bytes each, twice that while reloading |
 | | `preset` | | `update-block` (see [Blocking](#blocking)). Repeat the key to enable several |
+| `[lists]` | `url` | HaGeZi Pro, Pop-Up Ads | `<name>\|<https url>`, downloaded to `lists/<name>.txt`. Up to 16. A config without `[lists]` downloads nothing |
+| | `update_hours` | `24` | Hours between checks (0–720); `0` turns downloads off |
 
 Masks are case-insensitive and accept `*`, `?`, `[abc]`, `[a-z]` and `[!0-9]`. `*.example.com` matches subdomains of `example.com` but not `example.com` itself.
 
@@ -145,7 +149,8 @@ src/
 ├── core/       config.ini parsing, in-memory log, platform interface (platform.h)
 ├── dns/        wire format (dns.c), upstream forwarding (forward.c), server loop and decisions (server.c)
 ├── blocking/   blocklists (blocklist.c), list file formats (listparse.c), masks (rules.c), presets
-└── console/    single instance, HEN autostart, notifications, log persistence (runtime.c)
+├── console/    single instance, HEN autostart, notifications, log persistence (runtime.c)
+└── updates/    scheduled list downloads (updater.c) over verified HTTPS (http.c, libcurl)
 platform/
 ├── ps5/        platform.h on the console, SDK make rules, Docker image
 └── host/       platform.h for macOS/Linux development

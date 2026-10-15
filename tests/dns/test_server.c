@@ -1,6 +1,7 @@
 #include <arpa/inet.h>
 #include <assert.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,7 +13,7 @@
 static config_t cfg;
 static server_t srv;
 static int client;
-static volatile int stop;
+static atomic_int stop;
 
 /* A fake upstream that answers every query with ARCOUNT low byte = 0x42. */
 static void *upstream(void *arg) {

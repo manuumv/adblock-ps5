@@ -1,6 +1,7 @@
 #include <arpa/inet.h>
 #include <assert.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -10,7 +11,8 @@
 
 enum mode { SILENT, ANSWER, WRONG_ID, WRONG_THEN_RIGHT, WRONG_QUESTION, ID_SPY };
 
-static uint8_t seen_id[2]; /* the ID the ID_SPY upstream received */
+/* The ID the ID_SPY upstream received. Atomic: the socket orders it, but TSan cannot see that. */
+static atomic_uint seen_id;
 
 typedef struct {
     int fd;
@@ -19,7 +21,7 @@ typedef struct {
     pthread_t thread;
 } fake_upstream_t;
 
-static volatile int stop;
+static atomic_int stop;
 
 static void *serve(void *arg) {
     fake_upstream_t *u = arg;
@@ -32,7 +34,7 @@ static void *serve(void *arg) {
             continue;
         buf[2] |= 0x80; /* QR */
         if (u->mode == ID_SPY)
-            memcpy(seen_id, buf, 2);
+            seen_id = (unsigned)(buf[0] << 8 | buf[1]);
         if (u->mode == WRONG_QUESTION)
             buf[13] ^= 0x20; /* flip the case of the first name byte */
         if (u->mode == WRONG_ID || u->mode == WRONG_THEN_RIGHT) {
@@ -166,7 +168,7 @@ static void test_upstream_sees_random_id(void) {
     for (int i = 0; i < 4; i++) {
         assert(ask(&spy, NULL, 600, out, &via, &ms) == sizeof QUERY);
         assert(out[0] == 0xbe && out[1] == 0xef);
-        if (seen_id[0] != 0xbe || seen_id[1] != 0xef)
+        if (seen_id != 0xbeef)
             differ++;
     }
     assert(differ >= 3);

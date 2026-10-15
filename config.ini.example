@@ -3,6 +3,10 @@
 
 [general]
 debug=0
+# quiet=1 hides the start notification (errors are always shown)
+quiet=0
+# autostart=1 keeps the payload in etaHEN/onionHEN payloads/ so it starts with the HEN
+autostart=1
 # 0.0.0.0 serves every device on the LAN, not just the console
 bind=127.0.0.1
 # IPv6 listener address, or off

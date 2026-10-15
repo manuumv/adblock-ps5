@@ -49,7 +49,12 @@ typedef struct {
     int64_t next_check;
     uint64_t loaded_print;
     int loaded_once;
+
+    int ready_notified; /* start notice shown after the first list load */
+    int v4_failures;    /* consecutive IPv4 bind failures */
 } server_t;
+
+#define PORT_ERROR_AFTER 10 /* failed binds before the user is told */
 
 typedef enum {
     VERDICT_FORWARD,

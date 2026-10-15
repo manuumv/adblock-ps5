@@ -203,6 +203,16 @@ static void test_blocking_section(void) {
     assert(cfg.block_mask_count == 8); /* enabling twice adds nothing */
 }
 
+static void test_runtime_keys(void) {
+    unlink(path);
+    assert(config_load(path, &cfg) == 1);
+    assert(cfg.autostart == 1 && cfg.quiet == 0);
+    write_file("[general]\nautostart=0\nquiet=1\nquiet=2\n");
+    assert(config_load(path, &cfg) == 0);
+    assert(cfg.autostart == 0 && cfg.quiet == 1);
+    assert(has_warning("line 4") && cfg.warning_count == 1);
+}
+
 static void test_unreadable_path(void) {
     assert(config_load("/nonexistent-dir/x/config.ini", &cfg) == -1);
     check_defaults();
@@ -226,6 +236,7 @@ int main(void) {
     test_limits();
     test_embedded_nul();
     test_blocking_section();
+    test_runtime_keys();
     test_unreadable_path();
     unlink(path);
     rmdir(dir);

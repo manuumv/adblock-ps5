@@ -20,3 +20,14 @@ $(PS5_ELF): $(SRCS) src/main.c platform/ps5/platform.c $(HDRS)
 
 deploy: $(PS5_ELF)
 	nc -w 1 $(PS5_HOST) $(PS5_PORT) < $(PS5_ELF)
+
+# Copy the payload into the HEN's autostart folder over FTP, then run it. From
+# then on it starts with the HEN and keeps the other HEN's folder in sync.
+# etaHEN's FTP server is on 2121; onionHEN's FTP plugin on 1337 with
+# PS5_HEN_DIR=/data/OnionHEN.
+PS5_FTP ?= ftp://$(PS5_HOST):2121
+PS5_HEN_DIR ?= /data/etaHEN
+install: $(PS5_ELF)
+	curl -sS --ftp-create-dirs -T $(PS5_ELF) $(PS5_FTP)$(PS5_HEN_DIR)/payloads/ps5-adblock.elf
+	printf '' | curl -sS -T - $(PS5_FTP)$(PS5_HEN_DIR)/payloads/ps5-adblock.elf.auto_start
+	nc -w 1 $(PS5_HOST) $(PS5_PORT) < $(PS5_ELF)

@@ -18,6 +18,8 @@
 
 typedef struct {
     int debug;
+    int quiet;     /* 1: no start notification (errors are always shown) */
+    int autostart; /* 1: keep the payload in every HEN's autostart folder */
     struct in_addr bind;
     struct in6_addr bind6;
     int bind6_enabled;

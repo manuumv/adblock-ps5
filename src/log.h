@@ -17,4 +17,7 @@ void log_printf(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
  * out is untouched when i is out of range. */
 size_t log_line(size_t i, char *out, size_t n);
 
+/* Lines written since start, including those already dropped from the ring. */
+size_t log_total(void);
+
 #endif

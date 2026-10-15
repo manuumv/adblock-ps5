@@ -18,6 +18,10 @@ static const char DEFAULT_FILE[] =
     "[general]\n"
     "# debug=1 mirrors every query to the console log\n"
     "debug=0\n"
+    "# quiet=1 hides the start notification (errors are always shown)\n"
+    "quiet=0\n"
+    "# autostart=1 keeps the payload in etaHEN/onionHEN payloads/ so it starts with the HEN\n"
+    "autostart=1\n"
     "# address the DNS server listens on; 0.0.0.0 serves the whole LAN\n"
     "bind=127.0.0.1\n"
     "# IPv6 listener address, or off\n"
@@ -96,6 +100,7 @@ static void set_defaults(config_t *c) {
     c->bind6_enabled = 1;
     c->timeout_ms = 1500;
     c->max_domains = CFG_DEFAULT_MAX_DOMAINS;
+    c->autostart = 1;
     for (size_t i = 0; i < sizeof DEFAULT_UPSTREAMS / sizeof *DEFAULT_UPSTREAMS; i++)
         add_upstream(c, DEFAULT_UPSTREAMS[i]);
 }
@@ -132,6 +137,12 @@ static void parse_general(config_t *c, unsigned line, const char *key, const cha
     if (!strcmp(key, "debug")) {
         if (parse_int(val, 0, 1, &c->debug) != 0)
             warn(c, line, "debug must be 0 or 1");
+    } else if (!strcmp(key, "quiet")) {
+        if (parse_int(val, 0, 1, &c->quiet) != 0)
+            warn(c, line, "quiet must be 0 or 1");
+    } else if (!strcmp(key, "autostart")) {
+        if (parse_int(val, 0, 1, &c->autostart) != 0)
+            warn(c, line, "autostart must be 0 or 1");
     } else if (!strcmp(key, "bind")) {
         if (inet_pton(AF_INET, val, &c->bind) != 1) {
             inet_pton(AF_INET, "127.0.0.1", &c->bind);

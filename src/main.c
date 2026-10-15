@@ -11,7 +11,10 @@
 #include "config.h"
 #include "log.h"
 #include "platform.h"
+#include "runtime.h"
 #include "server.h"
+
+#define TAKE_OVER_MS 5000
 
 static volatile sig_atomic_t running = 1;
 static config_t cfg; /* large: static, not on the stack */
@@ -36,7 +39,8 @@ int main(void) {
 
     const char *dir = plat_data_dir();
     if (mkdir(dir, 0755) != 0 && errno != EEXIST)
-        fprintf(stderr, "[ps5-adblock] cannot create %s: %s\n", dir, strerror(errno));
+        plat_notify("ps5-adblock: cannot create %s (%s), running with defaults", dir,
+                    strerror(errno));
 
     char path[512];
     snprintf(path, sizeof path, "%s/lists", dir);
@@ -61,14 +65,37 @@ int main(void) {
     if (((const uint8_t *)&cfg.bind)[0] != 127)
         log_printf("serving the LAN: only private and link-local addresses are answered");
 
+    if (runtime_take_over(ADBLOCK_PROCESS_NAME, TAKE_OVER_MS) != 0) {
+        plat_notify("ps5-adblock: an older copy is still running and did not stop. "
+                    "Reboot the console, then send the payload again.");
+        plat_fini();
+        return 1;
+    }
+    /* Rotate once the old copy is gone, so it cannot rewrite last.log afterwards. */
+    runtime_log_start(dir, now_ms());
+
+    char msg[CFG_WARNING_LEN];
+    snprintf(path, sizeof path, "%s/%s", dir, AUTOSTART_ELF);
+    int synced = autostart_sync(cfg.autostart, plat_hen_dirs(), plat_payload_copies(), path,
+                                msg, sizeof msg);
+    log_printf("%s", msg);
+    if (synced == -1)
+        plat_notify("ps5-adblock: %s", msg); /* it may not start after a reboot */
+    else if (synced == AUTOSTART_NO_COPY && !cfg.quiet)
+        plat_notify("ps5-adblock: running, but it will not start by itself after a reboot "
+                    "(see Install in the README)");
+
     if (server_open(&srv, &cfg, plat_dns_port(), dir) == 0)
         log_printf("no listener open yet, retrying every %d ms", LISTENER_RETRY_MS);
 
-    while (running)
+    while (running) {
         server_poll(&srv, 1000);
+        runtime_log_tick(now_ms());
+    }
 
     log_printf("shutting down");
     server_close(&srv);
+    runtime_log_flush();
     plat_fini();
     return 0;
 }

@@ -11,6 +11,7 @@
 
 #include "dns.h"
 #include "log.h"
+#include "runtime.h"
 
 #define OVERRIDE_TTL 60
 #define BLOCK_TTL 60
@@ -41,7 +42,9 @@ static int open_listener(server_t *s, listener_t *l) {
     if (l->family == AF_INET6)
         (void)setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &one, sizeof one);
     if (bind(fd, (struct sockaddr *)&ss, sl) != 0) {
+        int err = errno; /* close() may overwrite it */
         close(fd);
+        errno = err;
         goto fail;
     }
     if (s->port == 0) {
@@ -51,11 +54,15 @@ static int open_listener(server_t *s, listener_t *l) {
     }
     l->fd = fd;
     l->retry_at = 0;
+    if (l->family == AF_INET)
+        s->v4_failures = 0;
     log_printf("listening on %s port %d", l->family == AF_INET ? "IPv4" : "IPv6", s->port);
     return 0;
 
 fail:
     log_printf("%s listener: %s", l->family == AF_INET ? "IPv4" : "IPv6", strerror(errno));
+    if (l->family == AF_INET && ++s->v4_failures % PORT_ERROR_AFTER == 0) /* repeat every 10 */
+        runtime_port_error_notice(s->port);
     return -1;
 }
 
@@ -146,6 +153,10 @@ static void maybe_reload(server_t *s) {
             s->active = s->pending;
             s->pending = NULL;
             log_printf("blocking %zu domains", s->active->blocked.count);
+            if (!s->ready_notified) {
+                runtime_ready_notice(s->cfg, s->active->blocked.count);
+                s->ready_notified = 1;
+            }
         } else {
             /* Retry later even if nothing changes, but not on every check. */
             s->loaded_print = ~s->loaded_print;

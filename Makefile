@@ -5,11 +5,12 @@
 #   make fuzz        libFuzzer on the DNS parser (needs clang with libFuzzer, see tools/fuzz.sh)
 #   make ps5         PS5 payload, needs PS5_PAYLOAD_SDK (or tools/ps5-build.sh for Docker)
 #   make deploy PS5_HOST=<ip>   send the payload to the ELF loader on port 9021
+#   make install PS5_HOST=<ip>  copy it into the HEN autostart folder over FTP, then run it
 
 VERSION := 0.1.0
 
 SRCS := src/dns.c src/rules.c src/config.c src/forward.c src/server.c src/log.c \
-	src/blocklist.c src/listparse.c src/presets.c
+	src/blocklist.c src/listparse.c src/presets.c src/runtime.c
 HDRS := $(wildcard src/*.h)
 CFLAGS_COMMON := -std=c11 -D_DEFAULT_SOURCE -Wall -Wextra -Werror -Isrc \
 	-DADBLOCK_VERSION=\"$(VERSION)\"
@@ -23,7 +24,7 @@ TESTS := $(patsubst tests/%.c,build/host/%,$(wildcard tests/test_*.c))
 FUZZ_CC ?= clang
 FUZZ_SECONDS ?= 600
 
-.PHONY: all host test fuzz fixtures bench ps5 deploy clean
+.PHONY: all host test fuzz fixtures bench ps5 deploy install clean
 
 all: host
 

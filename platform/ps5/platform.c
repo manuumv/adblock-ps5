@@ -118,6 +118,12 @@ int plat_system_dns_get(uint32_t servers[2]) {
 }
 
 int plat_system_dns_set(const uint32_t servers[2]) {
+    if (servers[0] == 0) { /* a NULL info clears the replacement (shadPS4) */
+        int rc = sceNetSetDnsInfo(NULL, 0);
+        sceNetClearDnsCache();
+        log_printf("sceNetSetDnsInfo(clear) %#x", (unsigned)rc);
+        return rc < 0 ? -1 : 0;
+    }
     dns_info_t info = {{servers[0], servers[1]}, {0}};
     int rc = sceNetSetDnsInfo(&info, 0);
     /* Its arguments are not documented; extra ones are ignored if it takes none. */

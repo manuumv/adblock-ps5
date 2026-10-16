@@ -50,7 +50,7 @@ void runtime_dns_check(const config_t *c, const char *primary, const char *secon
 typedef struct {
     int active;
     uint32_t target;      /* the address we answer on */
-    uint32_t original[2]; /* what to put back, network order */
+    uint32_t original[2]; /* what to put back, network order; all 0: just clear the redirect */
 } dns_redirect_t;
 /* Redirects unless dns_redirect=0. 0 when redirected, -1 otherwise. */
 int runtime_dns_redirect(dns_redirect_t *d, const config_t *c);

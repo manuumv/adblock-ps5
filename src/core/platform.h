@@ -40,7 +40,8 @@ int plat_console_dns(char primary[16], char secondary[16]);
 int plat_system_dns_get(uint32_t servers[2]);
 
 /* Replaces them until the network reconnects or the console reboots; the
- * network settings are not touched. 0 on success. */
+ * network settings are never written. Both 0 removes the replacement, so the
+ * console resolves with its own configuration again. 0 on success. */
 int plat_system_dns_set(const uint32_t servers[2]);
 
 /* On-screen toast (host: a line on stderr). */

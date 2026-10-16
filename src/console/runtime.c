@@ -266,10 +266,13 @@ static const char *ip_text(uint32_t addr, char *buf) {
 }
 
 /* What to restore when the system already points at us: a copy that was
- * killed before restoring, or settings set by hand. Only the settings know. */
+ * killed before restoring, or settings set by hand. Only the settings know;
+ * when they cannot be read, the original is empty and restoring clears the
+ * redirect, so the console goes back to its own configuration. */
 static void original_from_settings(dns_redirect_t *d) {
     char primary[16], secondary[16];
     struct in_addr p, s;
+    d->original[0] = d->original[1] = 0;
     if (plat_console_dns(primary, secondary) != 0 || inet_pton(AF_INET, primary, &p) != 1 ||
         p.s_addr == d->target)
         return;
@@ -323,7 +326,8 @@ void runtime_dns_restore(dns_redirect_t *d) {
     if (plat_system_dns_set(d->original) != 0)
         log_printf("dns redirect: cannot restore the console's DNS");
     else
-        log_printf("dns redirect: console DNS restored to %s", ip_text(d->original[0], a));
+        log_printf("dns redirect: console DNS restored to %s",
+                   d->original[0] ? ip_text(d->original[0], a) : "its own configuration");
     d->active = 0;
 }
 

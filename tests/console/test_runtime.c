@@ -208,6 +208,23 @@ static void test_dns_redirect(void) {
     runtime_dns_restore(&d);
     inet_pton(AF_INET, "127.0.0.1", &c.bind);
 
+    /* No secondary before: still none after. */
+    uint32_t only_primary[2] = {ip("45.56.67.85"), 0};
+    assert(plat_system_dns_set(only_primary) == 0);
+    assert(runtime_dns_redirect(&d, &c) == 0);
+    runtime_dns_restore(&d);
+    assert_system_dns("45.56.67.85", NULL);
+
+    /* A copy killed while redirecting left 127.0.0.1, and the settings cannot be
+     * read: the redirect is cleared on exit, never left in place. */
+    uint32_t leftover[2] = {ip("127.0.0.1"), 0};
+    assert(plat_system_dns_set(leftover) == 0);
+    assert(runtime_dns_redirect(&d, &c) == 0);
+    runtime_dns_restore(&d);
+    uint32_t now[2];
+    assert(plat_system_dns_get(now) == 0 && now[0] == 0 && now[1] == 0); /* back to the settings */
+    assert(plat_system_dns_set(settings) == 0);
+
     /* Turned off in config.ini: the system DNS is left alone. */
     c.dns_redirect = 0;
     assert(runtime_dns_redirect(&d, &c) == -1 && !d.active);

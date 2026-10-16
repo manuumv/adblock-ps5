@@ -220,6 +220,16 @@ int runtime_ready_notice(const config_t *c, size_t domains) {
     return 1;
 }
 
+static int is_upstream(const config_t *c, const char *ip) {
+    struct in_addr a;
+    if (inet_pton(AF_INET, ip, &a) != 1)
+        return 0;
+    for (size_t i = 0; i < c->upstream_count; i++)
+        if (c->upstreams[i].sin_addr.s_addr == a.s_addr)
+            return 1;
+    return 0;
+}
+
 void runtime_dns_check(const config_t *c, const char *primary, const char *secondary, char *state,
                        size_t n) {
     if (c->bind.s_addr == htonl(INADDR_ANY))
@@ -232,7 +242,8 @@ void runtime_dns_check(const config_t *c, const char *primary, const char *secon
                  "Settings > Network > Settings > Set Up Internet Connection > Advanced Settings > "
                  "DNS Settings > Manual.",
                  primary[0] ? primary : "empty", ip);
-    else if (secondary[0] && strcmp(secondary, "0.0.0.0") != 0 && strcmp(secondary, ip) != 0)
+    else if (secondary[0] && strcmp(secondary, "0.0.0.0") != 0 && strcmp(secondary, ip) != 0 &&
+             !is_upstream(c, secondary)) /* an upstream there is the user's own fallback */
         snprintf(msg, sizeof msg,
                  "ps5-adblock: Secondary DNS %s lets lookups skip the blocker. Leave it empty in "
                  "DNS Settings.",

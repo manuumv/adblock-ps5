@@ -146,6 +146,15 @@ static void test_console_dns_check(void) {
     dns_check("127.0.0.1", "8.8.8.8", state, out, sizeof out);
     assert(strstr(out, "Secondary DNS") && strstr(out, "8.8.8.8"));
 
+    /* A secondary that is also an upstream is the user's own fallback, such as a
+     * DNS that blocks Sony while ps5-adblock is not running: not flagged. */
+    cfg.upstreams[0].sin_family = AF_INET;
+    inet_pton(AF_INET, "45.56.67.85", &cfg.upstreams[0].sin_addr);
+    cfg.upstream_count = 1;
+    dns_check("127.0.0.1", "45.56.67.85", state, out, sizeof out);
+    assert(strstr(out, "blocking is on") && !strstr(out, "Secondary"));
+    cfg.upstream_count = 0;
+
     /* Serving the LAN (bind=0.0.0.0): the console may use any of its own addresses. */
     cfg.bind.s_addr = htonl(INADDR_ANY);
     state[0] = '\0';

@@ -117,8 +117,27 @@ Send `ps5-adblock.elf` to your loader on port 9021 after each reboot. Nothing el
 
 The DNS settings from the [Quick start](#quick-start) are what send the console's lookups to ps5-adblock. A few notes:
 
-- **Leave Secondary DNS empty.** A public resolver there would let the console skip the blocker. It would keep the console online before the jailbreak, but whether queries leak past the blocker that way is not verified yet.
+- **Leave Secondary DNS empty**, unless it is a DNS that blocks Sony (next section). A normal resolver there lets the console skip the blocker, and reach Sony's update servers before the jailbreak.
 - **After a reboot the console has no DNS until ps5-adblock runs again.** Jailbreak first. If your jailbreak chain needs the internet before ps5-adblock starts, set **DNS Settings** to **Automatic** for that step and back to **Manual** afterwards.
+
+### Already using a DNS that blocks Sony?
+
+Some people point the console at a public DNS that refuses Sony's servers, so it can never update, even without a jailbreak. Keep it: make it ps5-adblock's fallback and its upstream.
+
+| Console setting | Value |
+|---|---|
+| Primary DNS | `127.0.0.1` |
+| Secondary DNS | your Sony-blocking DNS |
+
+```ini
+[upstream]
+server=<your Sony-blocking DNS>
+```
+
+- **Before the jailbreak**, nothing answers on `127.0.0.1`, so the console uses your DNS: online, and still no updates.
+- **With ps5-adblock running**, it answers every lookup itself: ads and updates blocked, everything else passed on to your DNS.
+
+If the console ever asks the secondary while ps5-adblock is running, that lookup skips ad blocking, but updates stay blocked by your DNS. A secondary that is also listed in `[upstream]` does not trigger the *Secondary DNS* warning.
 
 ## Notifications
 
@@ -129,7 +148,7 @@ ps5-adblock talks to you through the console's notifications.
 | `DNS 127.0.0.1 ready, downloading block lists` | First start. DNS works and the lists are on their way. |
 | `blocking N domains and firmware updates, DNS 127.0.0.1` | The lists are loaded and firmware updates are blocked. Shown once per start. Without *and firmware updates*, `block_updates=0` is set. |
 | `nothing is blocked, the console's Primary DNS is …` | The console is not asking ps5-adblock, so nothing can be blocked. Set **Primary DNS** to `127.0.0.1` as in the [Quick start](#quick-start). Checked every minute. |
-| `Secondary DNS … lets lookups skip the blocker` | Leave **Secondary DNS** empty. |
+| `Secondary DNS … lets lookups skip the blocker` | Leave **Secondary DNS** empty, or, if it is a DNS that blocks Sony, add it to `[upstream]` (see [above](#already-using-a-dns-that-blocks-sony)). |
 | `DNS is set, blocking is on` | The DNS settings were fixed while ps5-adblock was running. |
 | `cannot update list <name>: …` | A list could not be downloaded. The previous copy keeps working, and it retries in 5 minutes. Shown once until the list works again. |
 | `… Check the console date and time.` | Added to the message above when the console clock looks wrong. |

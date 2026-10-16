@@ -38,7 +38,8 @@ int autostart_sync(int enable, const char *const *hen_dirs, const char *const *c
 int runtime_ready_notice(const config_t *c, size_t domains);
 /* Checks the DNS servers the console itself uses (as text, "" when unset)
  * against bind: a different Primary DNS means no lookup reaches the blocker,
- * a public Secondary DNS lets some skip it. Each problem is notified once, and
+ * a Secondary DNS lets some skip it (unless it is one of the upstreams: the
+ * user's own fallback, such as a DNS that blocks Sony while we are not running). Each problem is notified once, and
  * its fix confirmed once; state (RUNTIME_DNS_STATE_LEN bytes, initially "")
  * remembers the last verdict. Not judged when serving the LAN on 0.0.0.0. */
 #define RUNTIME_DNS_STATE_LEN 320

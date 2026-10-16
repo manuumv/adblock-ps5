@@ -39,6 +39,7 @@ ps5-adblock is a small payload that turns the console into its own ad-blocking D
 - ♻️ **Live reload.** Edit lists or the allowlist and changes apply within 30 seconds, with no restart.
 - 🚀 **Optional autostart** with etaHEN or onionHEN. It also works with any plain ELF loader.
 - 🔔 **Clear notifications** on the console, so you always know whether blocking is on.
+- 🧱 **Blocks firmware updates by default**, as nanoDNS does, so the console cannot update itself out of its jailbreak.
 - 🔒 **Careful by design.** It only answers devices on your local network and never downloads over plain HTTP. It resolves its own download servers directly, so a list can never block its own updates.
 
 ## How it works
@@ -65,7 +66,7 @@ DNS blocking works on whole domains. It is very effective against ad networks bu
 | Ads served by ad networks (Google Ads, DoubleClick, Taboola, …) | Ads served from the same domain as the content, such as YouTube video ads |
 | Scripts that open pop-up and pop-under ad tabs | A new tab the site opens itself. The tab still opens, but shows an error page instead of the ad |
 | Trackers and analytics | The empty space where a blocked ad used to be |
-| Firmware update servers (optional, see [Presets](#presets)) | Promotions on the PS5 home screen that come from Sony's own content servers |
+| Firmware update servers (on by default, see [Firmware updates](#firmware-updates)) | Promotions on the PS5 home screen that come from Sony's own content servers |
 
 ## Requirements
 
@@ -185,11 +186,13 @@ Lines starting with `#` or `!` are comments. Adblock rules that only make sense 
 
 If a site or feature breaks, put its domain in `/data/ps5-adblock/allowlist.txt`, in any of the formats above. Allowlisted domains and their subdomains are never blocked, whatever the lists say.
 
-### Presets
+### Firmware updates
 
-Add `preset=update-block` to the `[blocking]` section to block firmware updates, the same way nanoDNS does.
+A firmware update removes the jailbreak, and Sony does not let you go back. So ps5-adblock blocks updates out of the box, with the same rules as nanoDNS.
 
-> ⚠️ This blocks `playstation.com`, `playstation.net` and `psndl.net`, so **PSN features such as the store and online play stop working**. STUN and the network test stay reachable.
+> ⚠️ Updates come from the same servers as PSN. ps5-adblock blocks `playstation.com`, `playstation.net` and `psndl.net`, so **PSN features such as the store, game downloads and online play do not work** while it runs. STUN and the network test stay reachable.
+
+To use PSN, set `block_updates=0` in the `[blocking]` section and send the payload again. The console may then download and offer a firmware update, so turn off **Settings › System › System Software › System Software Update and Settings › Download Update Files Automatically** first, and never accept the update.
 
 ## Configuration
 
@@ -210,7 +213,7 @@ Settings live in `/data/ps5-adblock/config.ini`, which is created with sensible 
 | | `timeout_ms` | `1500` | Total time allowed for one lookup (100–30000), split evenly between the servers |
 | `[blocking]` | `block_mode` | `null` | `null` answers `0.0.0.0` / `::`. `nxdomain` answers "no such domain" |
 | | `max_domains` | `1500000` | Most domains loaded from `lists/` (1000–10000000) |
-| | `preset` | | `update-block` (see [Presets](#presets)). Repeat the key to enable several |
+| | `block_updates` | `1` | Block firmware updates and PSN (see [Firmware updates](#firmware-updates)). `0` allows them. Applies even to a `config.ini` that does not list it |
 | `[lists]` | `url` | the two HaGeZi lists | `<name>\|<https url>`. Up to 16. A config without `[lists]` downloads nothing |
 | | `update_hours` | `24` | Hours between checks (0–720). `0` turns downloads off |
 | `[overrides]` | `mask=IPv4` | | Answer matching names with this address, like a hosts file. Up to 256 |

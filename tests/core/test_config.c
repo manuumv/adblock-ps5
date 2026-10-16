@@ -93,7 +93,7 @@ static void test_comments_and_values(void) {
     assert(cfg.rule_count == 2);
     assert(strcmp(cfg.rules[0].mask, "*.ads.example.com") == 0);
     assert(cfg.rules[1].ip[0] == 192 && cfg.rules[1].ip[3] == 10);
-    assert(cfg.exception_count == 6); /* plus update-block's allow masks; this one is shared */
+    assert(cfg.exception_count == 1); /* the user's own: update blocking adds none */
     assert(strcmp(cfg.exceptions[0], "*.stun.playstation.net") == 0);
 }
 
@@ -152,9 +152,7 @@ static void test_limits(void) {
     assert(config_load(path, &cfg) == 0);
     assert(cfg.rule_count == CFG_MAX_RULES);
     assert(cfg.exception_count == CFG_MAX_EXCEPTIONS);
-    /* 44 + 44 over the limits, and 6 update-block allow masks that no longer fit:
-     * the updates stay blocked, the safe side for a jailbroken console. */
-    assert(cfg.warning_count == 94 && cfg.block_mask_count == 8);
+    assert(cfg.warning_count == 88 && cfg.block_mask_count == 8); /* updates still blocked */
 }
 
 static void test_embedded_nul(void) {
@@ -182,7 +180,7 @@ static void test_blocking_section(void) {
     assert(cfg.block_nxdomain == 0);
     assert(cfg.max_domains == 1500000);
     assert(cfg.block_updates == 1 && cfg.block_mask_count == 8); /* firmware updates blocked by default */
-    assert(has_exception("stun.*.playstation.net"));
+    assert(cfg.exception_count == 0); /* no Sony host is let through */
 
     /* A config.ini from before block_updates existed still gets the protection. */
     write_file("[blocking]\nblock_mode=null\n");
@@ -207,7 +205,7 @@ static void test_blocking_section(void) {
     assert(cfg.block_nxdomain == 1);
     assert(cfg.max_domains == 200000);
     assert(cfg.block_mask_count == 8);
-    assert(has_exception("stun.*.playstation.net") && has_exception("mine.example"));
+    assert(has_exception("mine.example") && !has_exception("stun.*.playstation.net"));
     assert(has_warning("line 5") && has_warning("line 6") && has_warning("line 7"));
     assert(cfg.warning_count == 3);
 

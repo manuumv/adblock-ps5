@@ -40,7 +40,7 @@ static const char DEFAULT_FILE[] =
     "\n"
     "[exceptions]\n"
     "# masks that skip overrides and always go upstream\n"
-    "# *.stun.playstation.net\n"
+    "# *.example.org\n"
     "\n"
     "[blocking]\n"
     "# null answers 0.0.0.0 / ::, nxdomain answers \"no such domain\"\n"

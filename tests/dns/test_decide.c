@@ -57,8 +57,12 @@ int main(void) {
     assert(server_decide(&pc, NULL, "psndl.net", &r) == VERDICT_BLOCKED);
     assert(server_decide(&pc, NULL, "gs2.ww.prod.dl.playstation.net", &r) == VERDICT_BLOCKED);
     assert(server_decide(&pc, NULL, "x.playstation.com.edgekey.net", &r) == VERDICT_BLOCKED);
-    assert(server_decide(&pc, NULL, "stun.us.playstation.net", &r) == VERDICT_ALLOWLISTED);
-    assert(server_decide(&pc, NULL, "feature.api.playstation.com", &r) == VERDICT_ALLOWLISTED);
+    /* nanoDNS lets these through for the network test, and the console then shows
+     * itself connected to PSN: blocked here, as Sony-blocking DNS servers do. */
+    assert(server_decide(&pc, NULL, "stun.us.playstation.net", &r) == VERDICT_BLOCKED);
+    assert(server_decide(&pc, NULL, "feature.api.playstation.com", &r) == VERDICT_BLOCKED);
+    assert(server_decide(&pc, NULL, "ena.net.playstation.net", &r) == VERDICT_BLOCKED);
+    assert(server_decide(&pc, NULL, "gst.prod.dl.playstation.net", &r) == VERDICT_BLOCKED);
     assert(server_decide(&pc, NULL, "example.com", &r) == VERDICT_FORWARD);
 
     /* block_updates=0: PSN and updates reachable again. */

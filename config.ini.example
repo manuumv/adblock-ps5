@@ -24,7 +24,8 @@ timeout_ms=1500
 nas.home=192.168.1.10
 
 [exceptions]
-*.stun.playstation.net
+# masks that skip overrides, lists and update blocking, and always go upstream
+# *.example.org
 
 [blocking]
 # null answers 0.0.0.0 / ::, nxdomain answers "no such domain"

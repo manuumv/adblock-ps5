@@ -92,6 +92,8 @@ ADBLOCK_DATA=./data ./build/host/ps5-adblock   # DNS on 127.0.0.1:5300
 make fuzz FUZZ=dns                 # libFuzzer (dns or listparse)
 ```
 
+**Releases:** merging `develop` into `master` publishes `v<VERSION>` (from the `Makefile`) with the ELF and its SHA-256. Bump `VERSION` before merging to release again.
+
 Host builds need libcurl; the tests need python3 and openssl. Everything outside `platform/ps5/` builds on a computer: `src/core` (config, log), `src/dns` (server), `src/blocking` (lists), `src/console` (runtime), `src/updates` (downloads).
 
 ## Credits

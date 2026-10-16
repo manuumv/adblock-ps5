@@ -1,0 +1,74 @@
+name: deploy
+
+# A merge into master publishes v<VERSION> (from the Makefile) with the PS5
+# payload attached. Bump VERSION in develop before merging to release again:
+# a version that already has a release is skipped.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install libcurl
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libcurl4-openssl-dev
+      - name: Test
+        run: make test HOST_CC=clang
+
+  release:
+    needs: test
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        run: |
+          version="$(sed -n 's/^VERSION := //p' Makefile)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::bad VERSION '$version' in Makefile"; exit 1; }
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Skip a version that is already released
+        id: check
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::notice::$TAG is already released; bump VERSION in the Makefile to publish a new one"
+            echo "exists=1" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build payload
+        if: steps.check.outputs.exists != '1'
+        run: tools/ps5-build.sh
+
+      - name: Checksum
+        if: steps.check.outputs.exists != '1'
+        working-directory: build/ps5
+        run: sha256sum ps5-adblock.elf > ps5-adblock.elf.sha256
+
+      - name: Create release
+        if: steps.check.outputs.exists != '1'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          gh release create "$TAG" \
+            build/ps5/ps5-adblock.elf \
+            build/ps5/ps5-adblock.elf.sha256 \
+            --target "$GITHUB_SHA" \
+            --title "ps5-adblock $TAG" \
+            --generate-notes

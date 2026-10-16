@@ -9,6 +9,7 @@
 
 #include "core/log.h"
 #include "console/runtime.h"
+#include "core/platform.h"
 
 static config_t cfg;
 static char dir[] = "/tmp/adblock-test-runtime-XXXXXX";
@@ -162,8 +163,60 @@ static void test_console_dns_check(void) {
     assert(out[0] == '\0');
 }
 
+static uint32_t ip(const char *s) {
+    struct in_addr a;
+    assert(inet_pton(AF_INET, s, &a) == 1);
+    return a.s_addr;
+}
+
+static void assert_system_dns(const char *primary, const char *secondary) {
+    uint32_t now[2];
+    assert(plat_system_dns_get(now) == 0);
+    assert(now[0] == ip(primary) && now[1] == (secondary ? ip(secondary) : 0));
+}
+
+static void test_dns_redirect(void) {
+    static config_t c;
+    inet_pton(AF_INET, "127.0.0.1", &c.bind);
+    c.dns_redirect = 1;
+    dns_redirect_t d;
+
+    /* The console uses the user's Sony-blocking DNS from its settings. */
+    setenv("ADBLOCK_SYSTEM_DNS", "45.56.67.85,8.8.8.8", 1);
+    assert(runtime_dns_redirect(&d, &c) == 0 && d.active);
+    assert_system_dns("127.0.0.1", NULL); /* no secondary to skip the blocker */
+
+    /* A network reconnect puts the settings' DNS back: taken over again. */
+    uint32_t settings[2] = {ip("45.56.67.85"), ip("8.8.8.8")};
+    assert(plat_system_dns_set(settings) == 0);
+    runtime_dns_keep(&d);
+    assert_system_dns("127.0.0.1", NULL);
+    runtime_dns_keep(&d); /* nothing to do */
+    assert_system_dns("127.0.0.1", NULL);
+
+    /* On exit the console gets its own DNS back. */
+    runtime_dns_restore(&d);
+    assert(!d.active);
+    assert_system_dns("45.56.67.85", "8.8.8.8");
+    runtime_dns_restore(&d); /* harmless twice */
+    assert_system_dns("45.56.67.85", "8.8.8.8");
+
+    /* Serving the LAN on 0.0.0.0: the console still asks 127.0.0.1. */
+    c.bind.s_addr = htonl(INADDR_ANY);
+    assert(runtime_dns_redirect(&d, &c) == 0);
+    assert_system_dns("127.0.0.1", NULL);
+    runtime_dns_restore(&d);
+    inet_pton(AF_INET, "127.0.0.1", &c.bind);
+
+    /* Turned off in config.ini: the system DNS is left alone. */
+    c.dns_redirect = 0;
+    assert(runtime_dns_redirect(&d, &c) == -1 && !d.active);
+    assert_system_dns("45.56.67.85", "8.8.8.8");
+}
+
 int main(void) {
     assert(mkdtemp(dir));
+    test_dns_redirect(); /* before anything else reads the fake system DNS */
     test_notices();
     test_log_flush();
     test_console_dns_check();

@@ -17,6 +17,8 @@
 
 #include <ps5/kernel.h>
 
+#include "core/log.h"
+
 #define PROCESS_NAME ADBLOCK_PROCESS_NAME
 /* struct kinfo_proc offsets on the PS5 kernel (nanoDNS). */
 #define KI_PID_OFFSET 72
@@ -40,6 +42,18 @@ int sceNetCtlGetInfo(int code, void *info);
 #define NET_CTL_INFO_PRIMARY_DNS 17
 #define NET_CTL_INFO_SECONDARY_DNS 18
 #define NET_CTL_INFO_SIZE 512
+
+/* The system-wide DNS servers. The console's libSceNet keeps the PS4 API:
+ * OpenOrbis and shadPS4 describe the info as two IPv4 addresses and flags 0.
+ * The struct is padded in case the console's is longer. */
+int sceNetGetDnsInfo(void *info, int flags);
+int sceNetSetDnsInfo(const void *info, int flags);
+int sceNetSetDnsInfoToKernel(const void *info, int flags);
+void sceNetClearDnsCache(void);
+typedef struct {
+    uint32_t dns[2];
+    uint8_t reserved[56];
+} dns_info_t;
 int sceNetPoolCreate(const char *name, int size, int flags);
 int sceNetPoolDestroy(int memid);
 
@@ -89,6 +103,28 @@ static int net_ctl_text(int code, char out[16]) {
     memcpy(out, info, 15);
     out[15] = '\0';
     return 0;
+}
+
+int plat_system_dns_get(uint32_t servers[2]) {
+    dns_info_t info = {{0, 0}, {0}};
+    int rc = sceNetGetDnsInfo(&info, 0);
+    if (rc < 0) {
+        log_printf("sceNetGetDnsInfo failed: %#x", (unsigned)rc);
+        return -1;
+    }
+    servers[0] = info.dns[0];
+    servers[1] = info.dns[1];
+    return 0;
+}
+
+int plat_system_dns_set(const uint32_t servers[2]) {
+    dns_info_t info = {{servers[0], servers[1]}, {0}};
+    int rc = sceNetSetDnsInfo(&info, 0);
+    /* Its arguments are not documented; extra ones are ignored if it takes none. */
+    int kernel = sceNetSetDnsInfoToKernel(&info, 0);
+    sceNetClearDnsCache();
+    log_printf("sceNetSetDnsInfo %#x, sceNetSetDnsInfoToKernel %#x", (unsigned)rc, (unsigned)kernel);
+    return rc < 0 ? -1 : 0;
 }
 
 int plat_console_dns(char primary[16], char secondary[16]) {

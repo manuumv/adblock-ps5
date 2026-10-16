@@ -29,6 +29,7 @@ typedef struct {
     int debug;
     int quiet;     /* 1: no start notification (errors are always shown) */
     int autostart; /* 1: keep the payload in every HEN's autostart folder */
+    int dns_redirect; /* 1: point the console's DNS at us while running (default) */
     struct in_addr bind;
     struct in6_addr bind6;
     int bind6_enabled;

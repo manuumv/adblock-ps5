@@ -8,6 +8,7 @@
  *   ADBLOCK_COPIES     comma-separated payload manager copies */
 #include "core/platform.h"
 
+#include <arpa/inet.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -67,6 +68,44 @@ static const char *const *env_list(const char *var, char *buf, size_t n, const c
     }
     out[count] = NULL;
     return out;
+}
+
+/* A fake system DNS for the tests: ADBLOCK_SYSTEM_DNS="a.b.c.d[,e.f.g.h]" is
+ * its starting value. Unset, a computer has no system DNS for us to redirect. */
+static uint32_t fake_dns[2];
+static int fake_dns_ready;
+
+static uint32_t parse_ip(const char *s) {
+    struct in_addr a;
+    return s && inet_pton(AF_INET, s, &a) == 1 ? a.s_addr : 0;
+}
+
+int plat_system_dns_get(uint32_t servers[2]) {
+    if (!fake_dns_ready) {
+        const char *env = getenv("ADBLOCK_SYSTEM_DNS");
+        char buf[64];
+        if (!env)
+            return -1;
+        snprintf(buf, sizeof buf, "%s", env);
+        char *second = strchr(buf, ',');
+        if (second)
+            *second++ = '\0';
+        fake_dns[0] = parse_ip(buf);
+        fake_dns[1] = parse_ip(second);
+        fake_dns_ready = 1;
+    }
+    servers[0] = fake_dns[0];
+    servers[1] = fake_dns[1];
+    return 0;
+}
+
+int plat_system_dns_set(const uint32_t servers[2]) {
+    uint32_t unused[2];
+    if (plat_system_dns_get(unused) != 0)
+        return -1;
+    fake_dns[0] = servers[0];
+    fake_dns[1] = servers[1];
+    return 0;
 }
 
 int plat_console_dns(char primary[16], char secondary[16]) {

@@ -260,6 +260,73 @@ void runtime_dns_check(const config_t *c, const char *primary, const char *secon
     snprintf(state, n, "%s", msg);
 }
 
+static const char *ip_text(uint32_t addr, char *buf) {
+    struct in_addr a = {addr};
+    return addr ? inet_ntop(AF_INET, &a, buf, INET_ADDRSTRLEN) : "none";
+}
+
+/* What to restore when the system already points at us: a copy that was
+ * killed before restoring, or settings set by hand. Only the settings know. */
+static void original_from_settings(dns_redirect_t *d) {
+    char primary[16], secondary[16];
+    struct in_addr p, s;
+    if (plat_console_dns(primary, secondary) != 0 || inet_pton(AF_INET, primary, &p) != 1 ||
+        p.s_addr == d->target)
+        return;
+    d->original[0] = p.s_addr;
+    d->original[1] = inet_pton(AF_INET, secondary, &s) == 1 ? s.s_addr : 0;
+}
+
+static int point_at_us(dns_redirect_t *d) {
+    const uint32_t ours[2] = {d->target, 0}; /* no secondary to skip the blocker */
+    return plat_system_dns_set(ours);
+}
+
+int runtime_dns_redirect(dns_redirect_t *d, const config_t *c) {
+    memset(d, 0, sizeof *d);
+    if (!c->dns_redirect)
+        return -1;
+    d->target = c->bind.s_addr == htonl(INADDR_ANY) ? htonl(INADDR_LOOPBACK) : c->bind.s_addr;
+    if (plat_system_dns_get(d->original) != 0) {
+        log_printf("dns redirect: cannot read the console's DNS");
+        return -1;
+    }
+    if (d->original[0] == d->target)
+        original_from_settings(d);
+    char a[INET_ADDRSTRLEN], b[INET_ADDRSTRLEN], t[INET_ADDRSTRLEN];
+    if (point_at_us(d) != 0) {
+        log_printf("dns redirect: cannot change the console's DNS");
+        return -1;
+    }
+    d->active = 1;
+    log_printf("dns redirect: console DNS %s, %s -> %s", ip_text(d->original[0], a),
+               ip_text(d->original[1], b), ip_text(d->target, t));
+    return 0;
+}
+
+void runtime_dns_keep(dns_redirect_t *d) {
+    uint32_t now[2];
+    if (!d->active || plat_system_dns_get(now) != 0 || (now[0] == d->target && now[1] == 0))
+        return;
+    if (now[0] != d->target) { /* the network came back with the settings' DNS */
+        d->original[0] = now[0];
+        d->original[1] = now[1];
+    }
+    log_printf("dns redirect: the network changed the console's DNS, redirecting again");
+    (void)point_at_us(d);
+}
+
+void runtime_dns_restore(dns_redirect_t *d) {
+    if (!d->active)
+        return;
+    char a[INET_ADDRSTRLEN];
+    if (plat_system_dns_set(d->original) != 0)
+        log_printf("dns redirect: cannot restore the console's DNS");
+    else
+        log_printf("dns redirect: console DNS restored to %s", ip_text(d->original[0], a));
+    d->active = 0;
+}
+
 void runtime_port_error_notice(int port) {
     plat_notify("ps5-adblock: cannot open DNS port %d. Set DNS to Automatic to get online, "
                 "then send the payload again.",

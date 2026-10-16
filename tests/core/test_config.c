@@ -217,7 +217,10 @@ static void test_blocking_section(void) {
 static void test_runtime_keys(void) {
     unlink(path);
     assert(config_load(path, &cfg) == 1);
-    assert(cfg.autostart == 1 && cfg.quiet == 0);
+    assert(cfg.autostart == 1 && cfg.quiet == 0 && cfg.dns_redirect == 1);
+    write_file("[general]\ndns_redirect=0\ndns_redirect=7\n");
+    assert(config_load(path, &cfg) == 0 && cfg.dns_redirect == 0);
+    assert(has_warning("line 3") && cfg.warning_count == 1);
     write_file("[general]\nautostart=0\nquiet=1\nquiet=2\n");
     assert(config_load(path, &cfg) == 0);
     assert(cfg.autostart == 0 && cfg.quiet == 1);

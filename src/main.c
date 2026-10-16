@@ -23,11 +23,52 @@ static config_t cfg; /* large: static, not on the stack */
 static server_t srv;
 static updater_t updater;
 
-/* The console's DNS settings are checked this often, so fixing them while
- * the payload runs is confirmed within a minute. */
+/* The console's DNS is looked at this often: redirected again after a
+ * network change, or its settings checked when it is not redirected. */
 #define CONSOLE_DNS_CHECK_MS 60000
 
-static void check_console_dns(const config_t *c, char *state) {
+static dns_redirect_t redirect;
+static int redirect_tried;
+static int64_t verify_at;   /* when to check that lookups arrive, 0 = done */
+static uint64_t queries_before;
+
+static uint64_t queries_so_far(void) {
+    server_stats_t st;
+    server_stats(&srv, &st);
+    return st.total;
+}
+
+/* Redirects once the IPv4 listener is up: never point the console at a port
+ * nobody answers. */
+static void try_redirect(int64_t now) {
+    if (redirect_tried || !cfg.dns_redirect || srv.listeners[0].fd < 0)
+        return;
+    redirect_tried = 1;
+    if (runtime_dns_redirect(&redirect, &cfg) == 0) {
+        queries_before = queries_so_far();
+        verify_at = now + CONSOLE_DNS_CHECK_MS;
+    }
+}
+
+/* A redirect that no lookup follows did not take effect on this console. */
+static void verify_redirect(int64_t now) {
+    if (!verify_at || now < verify_at)
+        return;
+    verify_at = 0;
+    uint64_t got = queries_so_far() - queries_before;
+    log_printf("dns redirect: %llu lookups in the first minute", (unsigned long long)got);
+    if (got == 0)
+        plat_notify("ps5-adblock: no lookup reached the blocker after redirecting the console's DNS. "
+                    "Set Primary DNS to 127.0.0.1 in the network settings, or report this.");
+}
+
+static void console_dns_upkeep(const config_t *c, char *state) {
+    if (redirect.active) {
+        runtime_dns_keep(&redirect);
+        return;
+    }
+    if (c->dns_redirect && !redirect_tried)
+        return; /* not listening yet */
     char primary[16], secondary[16];
     if (plat_console_dns(primary, secondary) == 0)
         runtime_dns_check(c, primary, secondary, state, RUNTIME_DNS_STATE_LEN);
@@ -112,13 +153,16 @@ int main(void) {
         server_poll(&srv, 1000);
         int64_t now = now_ms();
         runtime_log_tick(now);
+        try_redirect(now);
+        verify_redirect(now);
         if (now >= next_dns_check) {
-            check_console_dns(&cfg, dns_state);
+            console_dns_upkeep(&cfg, dns_state);
             next_dns_check = now + CONSOLE_DNS_CHECK_MS;
         }
     }
 
     log_printf("shutting down");
+    runtime_dns_restore(&redirect); /* while the network library is still up */
     updater_stop(&updater);
     server_close(&srv);
     runtime_log_flush();

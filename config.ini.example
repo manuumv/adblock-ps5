@@ -7,6 +7,9 @@ debug=0
 quiet=0
 # autostart=1 keeps the payload in etaHEN/onionHEN payloads/ so it starts with the HEN
 autostart=1
+# 1 points the console's DNS at ps5-adblock while it runs and puts yours back when it
+# stops, so the network settings can keep your own DNS
+dns_redirect=1
 # 0.0.0.0 serves every device on the LAN, not just the console
 bind=127.0.0.1
 # IPv6 listener address, or off

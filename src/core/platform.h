@@ -4,6 +4,8 @@
 #ifndef ADBLOCK_PLATFORM_H
 #define ADBLOCK_PLATFORM_H
 
+#include <stdint.h>
+
 #define ADBLOCK_PROCESS_NAME "ps5-adblock.elf"
 
 /* Names the process, raises privileges and starts networking. -1 on failure,
@@ -31,6 +33,15 @@ int plat_kill(int pid);
 /* The DNS servers the console's network settings use, as IPv4 text ("" when
  * unset). -1 when unknown: no network yet, or the host build. */
 int plat_console_dns(char primary[16], char secondary[16]);
+
+/* The DNS servers the whole system resolves with right now (IPv4, network
+ * order, 0 when unset). -1 when they cannot be read (host: unless the tests'
+ * ADBLOCK_SYSTEM_DNS fake is set). */
+int plat_system_dns_get(uint32_t servers[2]);
+
+/* Replaces them until the network reconnects or the console reboots; the
+ * network settings are not touched. 0 on success. */
+int plat_system_dns_set(const uint32_t servers[2]);
 
 /* On-screen toast (host: a line on stderr). */
 void plat_notify(const char *fmt, ...) __attribute__((format(printf, 1, 2)));

@@ -45,6 +45,20 @@ int runtime_ready_notice(const config_t *c, size_t domains);
 #define RUNTIME_DNS_STATE_LEN 320
 void runtime_dns_check(const config_t *c, const char *primary, const char *secondary, char *state,
                        size_t n);
+/* Points the console's own DNS at ps5-adblock while it runs, so the network
+ * settings can keep the user's DNS (needed before the jailbreak). */
+typedef struct {
+    int active;
+    uint32_t target;      /* the address we answer on */
+    uint32_t original[2]; /* what to put back, network order */
+} dns_redirect_t;
+/* Redirects unless dns_redirect=0. 0 when redirected, -1 otherwise. */
+int runtime_dns_redirect(dns_redirect_t *d, const config_t *c);
+/* Redirects again after a network reconnect brought the settings' DNS back. */
+void runtime_dns_keep(dns_redirect_t *d);
+/* Puts the console's DNS back. Harmless when not redirected. */
+void runtime_dns_restore(dns_redirect_t *d);
+
 /* Always shown: the DNS port could not be opened. */
 void runtime_port_error_notice(int port);
 

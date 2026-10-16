@@ -215,7 +215,8 @@ int runtime_ready_notice(const config_t *c, size_t domains) {
         plat_notify("ps5-adblock %s: DNS %s ready, downloading block lists", ADBLOCK_VERSION, ip);
         return 0;
     }
-    plat_notify("ps5-adblock %s: blocking %zu domains, DNS %s", ADBLOCK_VERSION, domains, ip);
+    plat_notify("ps5-adblock %s: blocking %zu domains%s, DNS %s", ADBLOCK_VERSION, domains,
+                c->block_updates ? " and firmware updates" : "", ip);
     return 1;
 }
 

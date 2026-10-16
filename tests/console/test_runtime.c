@@ -30,7 +30,9 @@ static void test_notices(void) {
     dup2(fd, 2);
 
     inet_pton(AF_INET, "127.0.0.1", &cfg.bind);
+    cfg.block_updates = 1;
     assert(runtime_ready_notice(&cfg, 500000) == 1);
+    cfg.block_updates = 0;
     cfg.quiet = 1;
     assert(runtime_ready_notice(&cfg, 777) == 1);
     runtime_port_error_notice(53); /* shown even when quiet */
@@ -49,6 +51,7 @@ static void test_notices(void) {
     char buf[2048];
     slurp(path, buf, sizeof buf);
     assert(strstr(buf, ADBLOCK_VERSION) && strstr(buf, "500000") && strstr(buf, "127.0.0.1"));
+    assert(strstr(buf, "500000 domains and firmware updates")); /* the user can see updates are off */
     assert(!strstr(buf, "777"));
     assert(strstr(buf, "port 53"));
     assert(strstr(buf, "downloading block lists") && !strstr(buf, "blocking 0"));

@@ -31,7 +31,8 @@ int runtime_take_over(const char *name, int timeout_ms);
 int autostart_sync(int enable, const char *const *hen_dirs, const char *const *copies,
                    const char *own_copy, char *msg, size_t n);
 
-/* "ps5-adblock <version>: blocking <n> domains, DNS <bind>", unless quiet.
+/* "ps5-adblock <version>: blocking <n> domains[ and firmware updates], DNS
+ * <bind>", unless quiet.
  * With no domains while [lists] are about to download it says so instead and
  * returns 0: call it again on the next load. 1 once nothing is left to announce. */
 int runtime_ready_notice(const config_t *c, size_t domains);

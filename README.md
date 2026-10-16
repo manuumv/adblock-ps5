@@ -85,7 +85,7 @@ DNS blocking works on whole domains. It is very effective against ad networks bu
    - **Primary DNS:** `127.0.0.1`
    - **Secondary DNS:** leave it empty.
 
-That's it. You will see **"DNS 127.0.0.1 ready, downloading block lists"**. About half a minute later you will see **"blocking 199603 domains"**, and ads are gone.
+That's it. You will see **"DNS 127.0.0.1 ready, downloading block lists"**. About half a minute later you will see **"blocking 199603 domains and firmware updates"**, and ads are gone.
 
 ## Installation in detail
 
@@ -127,7 +127,7 @@ ps5-adblock talks to you through the console's notifications.
 | Notification | Meaning |
 |---|---|
 | `DNS 127.0.0.1 ready, downloading block lists` | First start. DNS works and the lists are on their way. |
-| `blocking N domains, DNS 127.0.0.1` | The lists are loaded. Shown once per start. |
+| `blocking N domains and firmware updates, DNS 127.0.0.1` | The lists are loaded and firmware updates are blocked. Shown once per start. Without *and firmware updates*, `block_updates=0` is set. |
 | `nothing is blocked, the console's Primary DNS is …` | The console is not asking ps5-adblock, so nothing can be blocked. Set **Primary DNS** to `127.0.0.1` as in the [Quick start](#quick-start). Checked every minute. |
 | `Secondary DNS … lets lookups skip the blocker` | Leave **Secondary DNS** empty. |
 | `DNS is set, blocking is on` | The DNS settings were fixed while ps5-adblock was running. |

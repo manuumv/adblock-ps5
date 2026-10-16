@@ -2,7 +2,7 @@
 
 A DNS-based ad and telemetry blocker that runs on a jailbroken PS5. It is a payload: the console's DNS points at itself (`127.0.0.1`) and ps5-adblock decides which names to answer locally and which to forward to a real resolver.
 
-> **Status: early.** DNS blocking with lists of up to millions of domains that download and update themselves, an allowlist, live reloads and autostart with etaHEN/onionHEN.
+> **Status: early.** DNS blocking with lists of up to millions of domains that download and update themselves, an allowlist, live reloads, and optional autostart with etaHEN/onionHEN.
 
 ## What DNS blocking can and cannot do
 
@@ -11,7 +11,7 @@ A DNS-based ad and telemetry blocker that runs on a jailbroken PS5. It is a payl
 
 ## Requirements
 
-- A jailbroken PS5 running etaHEN or onionHEN, with an ELF loader on port 9021.
+- A jailbroken PS5 with an ELF loader on port 9021. etaHEN or onionHEN is optional: with one, the payload starts by itself after each reboot; without one, send it from your loader after each reboot.
 - To build: Docker, or the [ps5-payload-sdk](https://github.com/ps5-payload-dev/sdk) with LLVM 18 and the pacbrew libraries (libcurl). Host builds need libcurl, and the tests need python3 and openssl.
 
 ## Build
@@ -24,7 +24,9 @@ make host && make test        # development build and tests on macOS or Linux
 
 ## Install
 
-### 1. Put the payload in the HEN's autostart folder (once)
+### 1. Put the payload in the HEN's autostart folder (once, optional)
+
+Skip this step without etaHEN or onionHEN: just send `ps5-adblock.elf` to the loader on port 9021 after each reboot.
 
 etaHEN and onionHEN start `payloads/<name>.elf` whenever `<name>.elf.auto_start` sits next to it. From a computer:
 
@@ -40,7 +42,7 @@ Without a computer, any FTP app on a phone works:
 3. Create an empty file next to it named `ps5-adblock.elf.auto_start`.
 4. Send `ps5-adblock.elf` to the loader on port 9021 once, or reboot and jailbreak.
 
-On every start the payload copies itself into the other HEN's folder too (and refreshes a `pldmgr` copy if you have one), so switching HENs keeps it running. It shows a notification once the lists are loaded: *ps5-adblock 0.1.0: blocking N domains, DNS 127.0.0.1*.
+On every start the payload copies itself into the other HEN's folder too (and refreshes a `pldmgr` copy if you have one), so switching HENs keeps it running. It shows a notification once the lists are loaded: *ps5-adblock 0.1.0: blocking N domains, DNS 127.0.0.1*. On the very first start it says *DNS 127.0.0.1 ready, downloading block lists* instead, and the domain count follows about half a minute later.
 
 ### 2. Point the console's DNS at it
 
@@ -82,7 +84,7 @@ dig @127.0.0.1 -p 5300 example.com
 
 ps5-adblock blocks every domain listed in the `.txt` files under `/data/ps5-adblock/lists/`, and every subdomain of them. Changes are picked up within 30 seconds, with no restart and without interrupting DNS.
 
-**Lists download themselves.** A new `config.ini` comes with two lists chosen for the PS5 browser (ads on pages and pop-up/pop-under ad tabs). Two minutes after the first start they are downloaded into `lists/`, a notification confirms each one, and they are checked again every `update_hours` (24 by default):
+**Lists download themselves.** A new `config.ini` comes with two lists chosen for the PS5 browser (ads on pages and pop-up/pop-under ad tabs). They download into `lists/` within seconds of the first start, a notification gives the domain count once they are loaded, and they are checked again every `update_hours` (24 by default; a failed check is retried after 5 minutes):
 
 | `[lists]` entry | Domains | Source |
 |---|---|---|

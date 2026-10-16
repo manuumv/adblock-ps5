@@ -42,7 +42,7 @@ int plat_init(void) {
     (void)syscall(SYS_thr_set_name, -1, PROCESS_NAME);
 
     if (kernel_set_ucred_authid(getpid(), PRIVILEGED_AUTHID) != 0) {
-        plat_notify("ps5-adblock: cannot raise privileges (is the HEN running?)");
+        plat_notify("ps5-adblock: cannot raise privileges (is the jailbreak running?)");
         return -1;
     }
     if (sceNetInit() != 0) {

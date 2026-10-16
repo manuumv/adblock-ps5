@@ -1,138 +1,219 @@
 # ps5-adblock
 
-A DNS-based ad and telemetry blocker that runs on a jailbroken PS5. It is a payload: the console's DNS points at itself (`127.0.0.1`) and ps5-adblock decides which names to answer locally and which to forward to a real resolver.
+**A network-wide ad blocker that lives inside your jailbroken PS5.**
 
-> **Status: early.** DNS blocking with lists of up to millions of domains that download and update themselves, an allowlist, live reloads, and optional autostart with etaHEN/onionHEN.
+[![build](https://github.com/manuumv/adblock-ps5/actions/workflows/build.yml/badge.svg)](https://github.com/manuumv/adblock-ps5/actions/workflows/build.yml)
+[![license: GPLv3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 
-## What DNS blocking can and cannot do
+ps5-adblock is a small payload that turns the console into its own ad-blocking DNS server, in the style of Pi-hole. It blocks ads, pop-up ad tabs and trackers in the PS5 web browser, and anything else on the console that asks for a blocked domain. It runs entirely on the PS5: once it is installed you need no computer, no router changes and no app.
 
-- **Can** block domains that only serve ads, tracking or telemetry, and firmware update hosts.
-- **Cannot** block ads served from the same domain as the content they sit in, such as ads inside YouTube videos or promotions on the PS5 home screen that come from the same Sony servers as real content.
+> **Status: early.** Blocking, self-updating lists, the allowlist, live reloads and optional autostart all work. Expect rough edges, and please report what you find.
+
+---
+
+## Contents
+
+- [Features](#features)
+- [How it works](#how-it-works)
+- [What it can and cannot block](#what-it-can-and-cannot-block)
+- [Requirements](#requirements)
+- [Quick start](#quick-start)
+- [Installation in detail](#installation-in-detail)
+- [Notifications](#notifications)
+- [Block lists](#block-lists)
+- [Configuration](#configuration)
+- [Troubleshooting](#troubleshooting)
+- [Uninstall](#uninstall)
+- [For developers](#for-developers)
+- [Credits](#credits)
+- [License](#license)
+
+---
+
+## Features
+
+- 🛡️ **Blocks ads and pop-up ad tabs** in the PS5 browser using well-known community block lists ([HaGeZi](https://github.com/hagezi/dns-blocklists)), about 200,000 domains out of the box.
+- 🔄 **Lists keep themselves up to date.** They are downloaded over verified HTTPS when the payload first starts and checked again every 24 hours.
+- ⚡ **Fast and light.** Handles lists of over a million domains with about 8 bytes of memory per domain, and answers in microseconds.
+- ✅ **Allowlist.** If a site breaks, add its domain and it is never blocked again.
+- ♻️ **Live reload.** Edit lists or the allowlist and changes apply within 30 seconds, with no restart.
+- 🚀 **Optional autostart** with etaHEN or onionHEN. It also works with any plain ELF loader.
+- 🔔 **Clear notifications** on the console, so you always know whether blocking is on.
+- 🔒 **Careful by design.** It only answers devices on your local network and never downloads over plain HTTP. It resolves its own download servers directly, so a list can never block its own updates.
+
+## How it works
+
+Every time something on the console opens a web address, it first asks a DNS server for that address's IP. ps5-adblock becomes that DNS server.
+
+```mermaid
+flowchart LR
+    B["PS5 browser<br/>or any app"] -- "where is ads.example.com?" --> A["ps5-adblock<br/>127.0.0.1:53"]
+    A -- "on a block list: 0.0.0.0" --> B
+    A -- "anything else" --> U["Your real DNS<br/>1.1.1.1, 9.9.9.9"]
+    U -- "real address" --> A
+```
+
+- **Blocked domains** get the answer `0.0.0.0`, an address that leads nowhere, so the ad never loads.
+- **Every other domain** is passed to a real DNS server (Cloudflare and Quad9 by default) and the answer comes back unchanged.
+
+## What it can and cannot block
+
+DNS blocking works on whole domains. It is very effective against ad networks but cannot see inside a page.
+
+| ✅ Blocks | ❌ Cannot block |
+|---|---|
+| Ads served by ad networks (Google Ads, DoubleClick, Taboola, …) | Ads served from the same domain as the content, such as YouTube video ads |
+| Scripts that open pop-up and pop-under ad tabs | A new tab the site opens itself. The tab still opens, but shows an error page instead of the ad |
+| Trackers and analytics | The empty space where a blocked ad used to be |
+| Firmware update servers (optional, see [Presets](#presets)) | Promotions on the PS5 home screen that come from Sony's own content servers |
 
 ## Requirements
 
-- A jailbroken PS5 with an ELF loader on port 9021. etaHEN or onionHEN is optional: with one, the payload starts by itself after each reboot; without one, send it from your loader after each reboot.
-- To build: Docker, or the [ps5-payload-sdk](https://github.com/ps5-payload-dev/sdk) with LLVM 18 and the pacbrew libraries (libcurl). Host builds need libcurl, and the tests need python3 and openssl.
+- **A jailbroken PS5** with an ELF loader listening on port **9021**. Most jailbreak chains include one.
+- **etaHEN or onionHEN is optional.** With one, ps5-adblock starts by itself after every reboot. Without one, you send it from your loader after each reboot.
+- **The console's date and time must be correct.** Lists are downloaded over HTTPS, and a wrong clock makes every certificate look invalid.
 
-## Build
+## Quick start
 
-```sh
-tools/ps5-build.sh            # PS5 payload in Docker -> build/ps5/ps5-adblock.elf
-make ps5                      # same, with PS5_PAYLOAD_SDK installed locally
-make host && make test        # development build and tests on macOS or Linux
-```
+1. **Get the payload.** Download `ps5-adblock.elf` from the [Releases](https://github.com/manuumv/adblock-ps5/releases) page, or [build it yourself](#build).
+2. **Send it to the console** with your loader on port 9021. From a computer, for example:
+   ```sh
+   nc -w 1 <ps5-ip> 9021 < ps5-adblock.elf
+   ```
+3. **Point the console's DNS at itself.** Go to **Settings › Network › Settings › Set Up Internet Connection**, select your connection, then **Advanced Settings › DNS Settings › Manual**:
+   - **Primary DNS:** `127.0.0.1`
+   - **Secondary DNS:** leave it empty.
 
-## Install
+That's it. You will see **"DNS 127.0.0.1 ready, downloading block lists"**. About half a minute later you will see **"blocking 199603 domains"**, and ads are gone.
 
-### 1. Put the payload in the HEN's autostart folder (once, optional)
+## Installation in detail
 
-Skip this step without etaHEN or onionHEN: just send `ps5-adblock.elf` to the loader on port 9021 after each reboot.
+### Option A: start automatically with etaHEN or onionHEN (recommended)
 
-etaHEN and onionHEN start `payloads/<name>.elf` whenever `<name>.elf.auto_start` sits next to it. From a computer:
+Both HENs run any `payloads/<name>.elf` that has an empty `<name>.elf.auto_start` file next to it. Set it up once:
 
-```sh
-make install PS5_HOST=<ps5-ip>                                   # etaHEN (FTP on port 2121)
-make install PS5_HOST=<ps5-ip> PS5_FTP=ftp://<ps5-ip>:1337 PS5_HEN_DIR=/data/OnionHEN   # onionHEN
-```
+**With an FTP app on your phone or computer:**
 
-Without a computer, any FTP app on a phone works:
-
-1. Connect to the HEN's FTP server (etaHEN: port 2121, onionHEN: port 1337).
-2. Upload `ps5-adblock.elf` to `/data/etaHEN/payloads/` (or `/data/OnionHEN/payloads/`).
+1. Connect to the HEN's FTP server: etaHEN on port **2121**, onionHEN on port **1337**.
+2. Upload `ps5-adblock.elf` to `/data/etaHEN/payloads/` (onionHEN: `/data/OnionHEN/payloads/`).
 3. Create an empty file next to it named `ps5-adblock.elf.auto_start`.
-4. Send `ps5-adblock.elf` to the loader on port 9021 once, or reboot and jailbreak.
+4. Send the payload once to port 9021, or reboot and jailbreak.
 
-On every start the payload copies itself into the other HEN's folder too (and refreshes a `pldmgr` copy if you have one), so switching HENs keeps it running. It shows a notification once the lists are loaded: *ps5-adblock 0.1.0: blocking N domains, DNS 127.0.0.1*. On the very first start it says *DNS 127.0.0.1 ready, downloading block lists* instead, and the domain count follows about half a minute later.
-
-### 2. Point the console's DNS at it
-
-**Settings › Network › Settings › Set Up Internet Connection**, select your connection, **Advanced Settings › DNS Settings › Manual**:
-- **Primary DNS:** `127.0.0.1`
-- **Secondary DNS:** leave it empty for full blocking. A public resolver there (for example `1.1.1.1`) keeps the console online before the jailbreak, but whether the PS5 then sends some queries past the blocker is not verified yet.
-
-### After a reboot
-
-The console has no DNS until the HEN runs ps5-adblock. Jailbreak first; the blocker starts with the HEN and notifies when it is ready. If your jailbreak chain needs the internet before the HEN loads, set **DNS Settings** to **Automatic** for that step.
-
-### If the console loses its network
-
-ps5-adblock is not running. Send the payload to port 9021 again, or set **DNS Settings** back to **Automatic**. If a notification says it *cannot open DNS port 53*, another DNS payload (for example nanoDNS) is using the port: stop it or remove it from the HEN's autostart.
-
-### Uninstall
-
-Set `autostart=0` in `/data/ps5-adblock/config.ini` and send the payload once (it removes its `.auto_start` markers), or delete `ps5-adblock.elf*` from the HEN `payloads/` folders over FTP. Then set **DNS Settings** to **Automatic**. `/data/ps5-adblock/` holds your config, lists and logs (`last.log`, `last.previous.log`).
-
-### One-off run without autostart
+**Or from a computer with this repository:**
 
 ```sh
-make deploy PS5_HOST=<ps5-ip>        # or: nc -w 1 <ps5-ip> 9021 < build/ps5/ps5-adblock.elf
+make install PS5_HOST=<ps5-ip>                                                         # etaHEN
+make install PS5_HOST=<ps5-ip> PS5_FTP=ftp://<ps5-ip>:1337 PS5_HEN_DIR=/data/OnionHEN  # onionHEN
 ```
 
-Sending it again replaces the running copy.
+Every time it starts, ps5-adblock copies itself into the other HEN's folder too, so switching HENs keeps it running. It also refreshes a `pldmgr` copy if you have one.
 
-## Run on a computer
+### Option B: no HEN
 
-```sh
-make host
-ADBLOCK_DATA=./data ./build/host/ps5-adblock      # listens on 127.0.0.1:5300 and [::1]:5300
-dig @127.0.0.1 -p 5300 example.com
-```
+Send `ps5-adblock.elf` to your loader on port 9021 after each reboot. Nothing else is needed. Sending it again while it runs replaces the running copy, which is also how you update it.
 
-`ADBLOCK_PORT` changes the port. Set `debug=1` in `./data/config.ini` to see every query on stderr.
+### Setting the DNS
 
-## Blocking
+The DNS settings from the [Quick start](#quick-start) are what send the console's lookups to ps5-adblock. A few notes:
 
-ps5-adblock blocks every domain listed in the `.txt` files under `/data/ps5-adblock/lists/`, and every subdomain of them. Changes are picked up within 30 seconds, with no restart and without interrupting DNS.
+- **Leave Secondary DNS empty.** A public resolver there would let the console skip the blocker. It would keep the console online before the jailbreak, but whether queries leak past the blocker that way is not verified yet.
+- **After a reboot the console has no DNS until ps5-adblock runs again.** Jailbreak first. If your jailbreak chain needs the internet before ps5-adblock starts, set **DNS Settings** to **Automatic** for that step and back to **Manual** afterwards.
 
-**Lists download themselves.** A new `config.ini` comes with two lists chosen for the PS5 browser (ads on pages and pop-up/pop-under ad tabs). They download into `lists/` within seconds of the first start, a notification gives the domain count once they are loaded, and they are checked again every `update_hours` (24 by default; a failed check is retried after 5 minutes):
+## Notifications
 
-| `[lists]` entry | Domains | Source |
+ps5-adblock talks to you through the console's notifications.
+
+| Notification | Meaning |
+|---|---|
+| `DNS 127.0.0.1 ready, downloading block lists` | First start. DNS works and the lists are on their way. |
+| `blocking N domains, DNS 127.0.0.1` | Blocking is on. Shown once per start, after the lists load. |
+| `cannot update list <name>: …` | A list could not be downloaded. The previous copy keeps working, and it retries in 5 minutes. Shown once until the list works again. |
+| `… Check the console date and time.` | Added to the message above when the console clock looks wrong. |
+| `cannot open DNS port 53 …` | Something else is using the DNS port, usually another DNS payload such as nanoDNS. |
+| `an older copy is still running and did not stop` | Reboot the console and send the payload again. |
+| `running, but it will not start by itself after a reboot` | A HEN is installed but the payload is not in its folder yet. See [Option A](#option-a-start-automatically-with-etahen-or-onionhen-recommended). |
+
+Set `quiet=1` in the configuration to hide the start notifications. Errors are always shown.
+
+## Block lists
+
+Blocked domains come from every `.txt` file in `/data/ps5-adblock/lists/`. Each domain blocks all of its subdomains too: `ads.example.com` also blocks `x.ads.example.com`.
+
+### Default lists
+
+A new configuration comes with two lists chosen for the PS5 browser:
+
+| Name | Domains | What it blocks |
 |---|---|---|
-| `url=hagezi-pro\|…` | ~200k | `https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/pro-onlydomains.txt` |
-| `url=hagezi-popupads\|…` | ~46k | `https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/popupads-onlydomains.txt` |
+| `hagezi-pro` | ~200,000 | Ads, trackers, malware and scam domains, with few false positives |
+| `hagezi-popupads` | ~46,000 | Pop-up and pop-under ad networks, the source of most unwanted tabs |
 
-Add your own as `url=<name>|<https url>` (name: `a-z 0-9 - _`); each is saved as `lists/<name>.txt`. Downloads use HTTPS with certificate checks and never plain HTTP, redirects included; unchanged lists are not downloaded again; a failed download keeps the previous copy and shows one notification until the list works again. **The console's date and time must be right**, or certificates look invalid (the notification says so). You can still copy any list into `lists/` over FTP yourself.
+They are downloaded about 15 seconds after the first start and checked again every 24 hours. Unchanged lists are not downloaded again, and a failed download always keeps the previous copy.
 
-Three line formats are understood: hosts file entries, one domain per line, and Adblock-style domain rules. Lines starting with `#` or `!` are comments.
+### Adding your own lists
+
+Add a line to the `[lists]` section of `config.ini`:
+
+```ini
+[lists]
+url=my-list|https://example.org/blocklist.txt
+```
+
+The name may use `a-z`, `0-9`, `-` and `_`. The list is saved as `lists/my-list.txt`. Only `https://` addresses are accepted, and up to 16 lists.
+
+You can also copy any list file into `lists/` over FTP yourself. ps5-adblock picks it up within 30 seconds.
+
+### Supported formats
 
 ```text
+# hosts file entries
 0.0.0.0 ads.example.com
+
+# one domain per line
 tracker.example.net
+
+# Adblock-style domain rules
 ||popups.example.org^
 ```
 
-Adblock rules that need a browser (element hiding `##`, `$third-party`, paths, regexes) are counted and skipped.
+Lines starting with `#` or `!` are comments. Adblock rules that only make sense inside a browser, such as element hiding (`##`), `$third-party`, paths and regexes, are skipped.
 
-**Allowlist.** Domains in `/data/ps5-adblock/allowlist.txt` (same formats) are never blocked, nor are their subdomains. Use it when a site breaks.
+### Allowlist
 
-**How blocked names are answered.** `block_mode=null` (default) answers `0.0.0.0` for IPv4 and `::` for IPv6; `block_mode=nxdomain` answers "no such domain".
+If a site or feature breaks, put its domain in `/data/ps5-adblock/allowlist.txt`, in any of the formats above. Allowlisted domains and their subdomains are never blocked, whatever the lists say.
 
-**Presets.** `preset=update-block` in `[blocking]` blocks firmware updates the way nanoDNS does: it blocks `playstation.com`, `playstation.net` and `psndl.net`, so **PSN features (store, online play) stop working**; STUN and the network test stay reachable. `preset=ps-telemetry` is reserved and empty for now.
+### Presets
 
-**What DNS blocking cannot do in the browser.** It stops ad-network ads and the scripts that open pop-up tabs. It cannot stop a tab that the site itself opens (the tab shows an error page instead of the ad), hide the empty space where an ad was, or block ads served from the same domain as the page (for example YouTube video ads).
+Add `preset=update-block` to the `[blocking]` section to block firmware updates, the same way nanoDNS does.
+
+> ⚠️ This blocks `playstation.com`, `playstation.net` and `psndl.net`, so **PSN features such as the store and online play stop working**. STUN and the network test stay reachable.
 
 ## Configuration
 
-`/data/ps5-adblock/config.ini` (see [`config.ini.example`](config.ini.example)). Lines starting with `#` or `;` are comments. An invalid line is skipped with a warning that names its line number; the rest of the file still applies.
+Settings live in `/data/ps5-adblock/config.ini`, which is created with sensible defaults on the first start. See [`config.ini.example`](config.ini.example) for a commented copy.
+
+- Lines starting with `#` or `;` are comments.
+- An invalid line is skipped and noted in `last.log` with its line number. The rest of the file still applies.
+- Changes take effect the next time the payload starts.
 
 | Section | Key | Default | Meaning |
 |---|---|---|---|
-| `[general]` | `debug` | `0` | `1` mirrors every query to the console log |
-| | `quiet` | `0` | `1` hides the start notification; errors are always shown |
-| | `autostart` | `1` | Keep the payload in every HEN's autostart folder; `0` removes the markers |
-| | `bind` | `127.0.0.1` | IPv4 address to listen on; `0.0.0.0` serves the whole LAN. Only private and link-local clients are ever answered |
+| `[general]` | `debug` | `0` | `1` logs every query |
+| | `quiet` | `0` | `1` hides the start notifications. Errors are always shown |
+| | `autostart` | `1` | Keep the payload in every HEN's autostart folder. `0` removes it from autostart |
+| | `bind` | `127.0.0.1` | IPv4 address to listen on. `0.0.0.0` serves your whole local network. Only private and link-local clients are ever answered |
 | | `bind6` | `::1` | IPv6 address to listen on, or `off` |
-| `[upstream]` | `server` | `1.1.1.1`, `9.9.9.9` | Resolvers tried in order, up to 8. Listing any replaces the defaults |
-| | `timeout_ms` | `1500` | Total time budget for one query (100–30000). Each upstream gets an equal share, so one dead server cannot use it all |
-| `[overrides]` | `mask=IPv4` | | Answer names matching `mask` with this address (TTL 60). Other query types for that name get an empty answer. Up to 256 |
-| `[exceptions]` | `mask` | | Names that skip overrides and always go upstream. Up to 256 |
-| `[blocking]` | `block_mode` | `null` | `null` answers `0.0.0.0` / `::`; `nxdomain` answers "no such domain" |
-| | `max_domains` | `1500000` | Cap on domains loaded from `lists/` (1000–10000000). About 8 bytes each, twice that while reloading |
-| | `preset` | | `update-block` (see [Blocking](#blocking)). Repeat the key to enable several |
-| `[lists]` | `url` | HaGeZi Pro, Pop-Up Ads | `<name>\|<https url>`, downloaded to `lists/<name>.txt`. Up to 16. A config without `[lists]` downloads nothing |
-| | `update_hours` | `24` | Hours between checks (0–720); `0` turns downloads off |
+| `[upstream]` | `server` | `1.1.1.1`, `9.9.9.9` | Real DNS servers, tried in order (up to 8). Listing any replaces the defaults |
+| | `timeout_ms` | `1500` | Total time allowed for one lookup (100–30000), split evenly between the servers |
+| `[blocking]` | `block_mode` | `null` | `null` answers `0.0.0.0` / `::`. `nxdomain` answers "no such domain" |
+| | `max_domains` | `1500000` | Most domains loaded from `lists/` (1000–10000000) |
+| | `preset` | | `update-block` (see [Presets](#presets)). Repeat the key to enable several |
+| `[lists]` | `url` | the two HaGeZi lists | `<name>\|<https url>`. Up to 16. A config without `[lists]` downloads nothing |
+| | `update_hours` | `24` | Hours between checks (0–720). `0` turns downloads off |
+| `[overrides]` | `mask=IPv4` | | Answer matching names with this address, like a hosts file. Up to 256 |
+| `[exceptions]` | `mask` | | Names that skip the overrides and always go to the real DNS. Up to 256 |
 
-Masks are case-insensitive and accept `*`, `?`, `[abc]`, `[a-z]` and `[!0-9]`. `*.example.com` matches subdomains of `example.com` but not `example.com` itself.
+Masks are case-insensitive and accept `*`, `?`, `[abc]`, `[a-z]` and `[!0-9]`. `*.example.com` matches the subdomains of `example.com` but not `example.com` itself.
 
 ```ini
 [overrides]
@@ -143,7 +224,63 @@ nas.home=192.168.1.10
 *.stun.playstation.net
 ```
 
-## Source layout
+## Troubleshooting
+
+**The console has no internet.**
+ps5-adblock is not running, usually because the console has just rebooted. Send the payload to port 9021 again, or set **DNS Settings** back to **Automatic** to get online without it.
+
+**"cannot open DNS port 53".**
+Another DNS payload (for example nanoDNS) is already running. Stop it or remove it from the HEN's autostart, then send ps5-adblock again.
+
+**A site or feature stopped working.**
+Add the domain it needs to `allowlist.txt` (see [Allowlist](#allowlist)). The change applies within 30 seconds.
+
+**"cannot update list … Check the console date and time".**
+The console clock is wrong, so HTTPS certificates look invalid. Fix the date and time; the next retry, within 5 minutes, will succeed.
+
+**A setting seems to be ignored.**
+Look in `/data/ps5-adblock/last.log` for `config line N:`, which explains why that line was skipped.
+
+**I want to see what is happening.**
+The log of the current session is written to `/data/ps5-adblock/last.log`, and the previous session's to `last.previous.log`. Grab them over FTP. Set `debug=1` to log every query as well.
+
+## Uninstall
+
+1. Set `autostart=0` in `/data/ps5-adblock/config.ini` and send the payload once. This removes it from the HEN's autostart. Alternatively, delete `ps5-adblock.elf*` from the HEN `payloads/` folders over FTP.
+2. Set **DNS Settings** back to **Automatic**.
+3. Optionally, delete `/data/ps5-adblock/`, which holds your configuration, lists and logs.
+
+---
+
+## For developers
+
+### Build
+
+```sh
+tools/ps5-build.sh       # PS5 payload, built in Docker   -> build/ps5/ps5-adblock.elf
+make ps5                 # the same with the SDK installed locally (PS5_PAYLOAD_SDK)
+make deploy PS5_HOST=<ps5-ip>   # send it to the loader on port 9021
+```
+
+Building for the PS5 needs Docker, or the [ps5-payload-sdk](https://github.com/ps5-payload-dev/sdk) with LLVM 18 and the pacbrew libraries (static libcurl and OpenSSL).
+
+### Run and test on a computer
+
+Every module also builds for macOS and Linux, so most development happens without a console:
+
+```sh
+make host
+ADBLOCK_DATA=./data ./build/host/ps5-adblock     # listens on 127.0.0.1:5300 and [::1]:5300
+dig @127.0.0.1 -p 5300 pagead2.googlesyndication.com
+
+make test                # all tests, with AddressSanitizer and UndefinedBehaviorSanitizer
+make fuzz FUZZ=dns       # libFuzzer on the DNS parser, or FUZZ=listparse (needs clang with libFuzzer)
+make bench               # blocklist benchmark (run `make fixtures` first)
+```
+
+`ADBLOCK_PORT` changes the port. Host builds need libcurl, and the tests need python3 and openssl.
+
+### Source layout
 
 ```text
 src/
@@ -156,10 +293,10 @@ src/
 platform/
 ├── ps5/        platform.h on the console, SDK make rules, Docker image
 └── host/       platform.h for macOS/Linux development
-tests/          one folder per src/ module: test_*.c (unit and integration), fuzz_*.c, bench_*.c
+tests/          one folder per src/ module: test_*.c, fuzz_*.c, bench_*.c
 ```
 
-`src/` never includes console headers: only `platform/ps5/platform.c` does, so every module builds and runs its tests on a computer.
+Only `platform/ps5/platform.c` includes console headers, which is what keeps every other module testable on a computer.
 
 ## Credits
 
@@ -168,4 +305,6 @@ tests/          one folder per src/ module: test_*.c (unit and integration), fuz
 
 ## License
 
-GPLv3, see [LICENSE](LICENSE). Not affiliated with Sony.
+GPLv3, see [LICENSE](LICENSE).
+
+ps5-adblock is not affiliated with or endorsed by Sony Interactive Entertainment. Use it at your own risk.

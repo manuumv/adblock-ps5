@@ -39,7 +39,7 @@ ps5-adblock is a small payload that turns the console into its own ad-blocking D
 - ♻️ **Live reload.** Edit lists or the allowlist and changes apply within 30 seconds, with no restart.
 - 🚀 **Optional autostart** with etaHEN or onionHEN. It also works with any plain ELF loader.
 - 🔔 **Clear notifications** on the console, so you always know whether blocking is on.
-- 🧱 **Blocks firmware updates by default**, as nanoDNS does, so the console cannot update itself out of its jailbreak.
+- 🧱 **Blocks firmware updates and PSN by default**, so the console cannot update itself out of its jailbreak.
 - 🔒 **Careful by design.** It only answers devices on your local network and never downloads over plain HTTP. It resolves its own download servers directly, so a list can never block its own updates.
 
 ## How it works
@@ -207,9 +207,11 @@ If a site or feature breaks, put its domain in `/data/ps5-adblock/allowlist.txt`
 
 ### Firmware updates
 
-A firmware update removes the jailbreak, and Sony does not let you go back. So ps5-adblock blocks updates out of the box, with the same rules as nanoDNS.
+A firmware update removes the jailbreak, and Sony does not let you go back. So ps5-adblock blocks updates out of the box.
 
-> ⚠️ Updates come from the same servers as PSN. ps5-adblock blocks `playstation.com`, `playstation.net` and `psndl.net`, so **PSN features such as the store, game downloads and online play do not work** while it runs. STUN and the network test stay reachable.
+> ⚠️ Updates come from the same servers as PSN. ps5-adblock blocks every name under `playstation.com`, `playstation.net` and `psndl.net`, so **PSN features such as the store, game downloads and online play do not work** while it runs, and the console's network test reports that it cannot connect to PSN. That is expected.
+
+Unlike nanoDNS, it lets no Sony host through. nanoDNS keeps a few reachable (`feature.api.playstation.com`, STUN, `ena.net`, `post.net` and `gst.prod.dl.playstation.net`) so the network test passes, and through them the console still shows itself as connected to PSN.
 
 To use PSN, set `block_updates=0` in the `[blocking]` section and send the payload again. The console may then download and offer a firmware update, so turn off **Settings › System › System Software › System Software Update and Settings › Download Update Files Automatically** first, and never accept the update.
 
@@ -246,7 +248,7 @@ Masks are case-insensitive and accept `*`, `?`, `[abc]`, `[a-z]` and `[!0-9]`. `
 nas.home=192.168.1.10
 
 [exceptions]
-*.stun.playstation.net
+*.example.org
 ```
 
 ## Troubleshooting

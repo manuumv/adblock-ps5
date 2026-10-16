@@ -44,6 +44,7 @@ typedef struct {
 
     int block_nxdomain;   /* block_mode=nxdomain; default null (0.0.0.0 / ::) */
     size_t max_domains;   /* cap on domains loaded from lists */
+    int block_updates;    /* 1 (default): the update-block preset, as nanoDNS does */
     char block_masks[CFG_MAX_BLOCK_MASKS][DNS_NAME_MAX]; /* from presets */
     size_t block_mask_count;
 

@@ -47,7 +47,9 @@ static const char DEFAULT_FILE[] =
     "block_mode=null\n"
     "# blocked domains are read from every .txt file in lists/; allowlist.txt wins over them\n"
     "max_domains=1500000\n"
-    "# preset=update-block   blocks firmware updates and PSN (PSN features stop working)\n"
+    "# 1 blocks firmware updates, as nanoDNS does. It also blocks PSN (store, online play):\n"
+    "# set 0 to use PSN, and expect the console to offer a firmware update\n"
+    "block_updates=1\n"
     "\n"
     "[lists]\n"
     "# url=<name>|<https url>: downloaded to lists/<name>.txt and kept up to date\n"
@@ -110,6 +112,7 @@ static void set_defaults(config_t *c) {
     c->max_domains = CFG_DEFAULT_MAX_DOMAINS;
     c->autostart = 1;
     c->update_hours = 24;
+    c->block_updates = 1;
     for (size_t i = 0; i < sizeof DEFAULT_UPSTREAMS / sizeof *DEFAULT_UPSTREAMS; i++)
         add_upstream(c, DEFAULT_UPSTREAMS[i]);
 }
@@ -229,6 +232,13 @@ static void add_mask(config_t *c, unsigned line, char (*masks)[DNS_NAME_MAX], si
         snprintf(masks[(*n)++], DNS_NAME_MAX, "%s", mask);
 }
 
+static void apply_preset(config_t *c, unsigned line, const preset_t *p) {
+    for (const char *const *m = p->block; *m; m++)
+        add_mask(c, line, c->block_masks, &c->block_mask_count, CFG_MAX_BLOCK_MASKS, *m);
+    for (const char *const *m = p->allow; *m; m++)
+        add_mask(c, line, c->exceptions, &c->exception_count, CFG_MAX_EXCEPTIONS, *m);
+}
+
 static void parse_blocking(config_t *c, unsigned line, const char *key, const char *val) {
     if (!strcmp(key, "block_mode")) {
         if (!strcmp(val, "null"))
@@ -243,16 +253,15 @@ static void parse_blocking(config_t *c, unsigned line, const char *key, const ch
             warn(c, line, "max_domains must be 1000-10000000");
         else
             c->max_domains = (size_t)v;
+    } else if (!strcmp(key, "block_updates")) {
+        if (parse_int(val, 0, 1, &c->block_updates) != 0)
+            warn(c, line, "block_updates must be 0 or 1");
     } else if (!strcmp(key, "preset")) {
         const preset_t *p = preset_find(val);
-        if (!p) {
+        if (p)
+            apply_preset(c, line, p);
+        else
             warn(c, line, "unknown preset '%s'", val);
-            return;
-        }
-        for (const char *const *m = p->block; *m; m++)
-            add_mask(c, line, c->block_masks, &c->block_mask_count, CFG_MAX_BLOCK_MASKS, *m);
-        for (const char *const *m = p->allow; *m; m++)
-            add_mask(c, line, c->exceptions, &c->exception_count, CFG_MAX_EXCEPTIONS, *m);
     } else {
         warn(c, line, "unknown key '%s'", key);
     }
@@ -411,9 +420,13 @@ int config_load(const char *path, config_t *c) {
     }
     if (!f) {
         warn(c, 0, "cannot read %s: %s", path, strerror(errno));
+        apply_preset(c, 0, preset_find("update-block")); /* the defaults protect too */
         return -1;
     }
     parse(f, c);
     fclose(f);
+    /* After parsing, so a config.ini without the key (older ones) is protected too. */
+    if (c->block_updates)
+        apply_preset(c, 0, preset_find("update-block"));
     return created;
 }

@@ -31,7 +31,9 @@ nas.home=192.168.1.10
 block_mode=null
 # blocked domains come from every .txt file in lists/; allowlist.txt wins over them
 max_domains=1500000
-# preset=update-block   blocks firmware updates and PSN (PSN features stop working)
+# 1 blocks firmware updates, as nanoDNS does. It also blocks PSN (store, online play):
+# set 0 to use PSN, and expect the console to offer a firmware update
+block_updates=1
 
 [lists]
 # url=<name>|<https url>: downloaded to lists/<name>.txt and kept up to date

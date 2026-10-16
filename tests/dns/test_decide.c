@@ -45,22 +45,30 @@ int main(void) {
     set_free(&b.blocked);
     set_free(&b.allowed);
 
-    /* update-block preset, loaded through config.ini as a user would. */
+    /* Firmware updates are blocked by default, loaded through config.ini as a user would. */
     static config_t pc;
     char path[] = "/tmp/adblock-test-preset-XXXXXX";
     int fd = mkstemp(path);
     assert(fd >= 0);
     FILE *f = fdopen(fd, "w");
-    fputs("[blocking]\npreset=update-block\n", f);
+    fputs("[general]\ndebug=0\n", f);
     fclose(f);
     assert(config_load(path, &pc) == 0 && pc.warning_count == 0);
-    unlink(path);
     assert(server_decide(&pc, NULL, "psndl.net", &r) == VERDICT_BLOCKED);
     assert(server_decide(&pc, NULL, "gs2.ww.prod.dl.playstation.net", &r) == VERDICT_BLOCKED);
     assert(server_decide(&pc, NULL, "x.playstation.com.edgekey.net", &r) == VERDICT_BLOCKED);
     assert(server_decide(&pc, NULL, "stun.us.playstation.net", &r) == VERDICT_ALLOWLISTED);
     assert(server_decide(&pc, NULL, "feature.api.playstation.com", &r) == VERDICT_ALLOWLISTED);
     assert(server_decide(&pc, NULL, "example.com", &r) == VERDICT_FORWARD);
+
+    /* block_updates=0: PSN and updates reachable again. */
+    f = fopen(path, "w");
+    fputs("[blocking]\nblock_updates=0\n", f);
+    fclose(f);
+    assert(config_load(path, &pc) == 0 && pc.warning_count == 0);
+    unlink(path);
+    assert(server_decide(&pc, NULL, "psndl.net", &r) == VERDICT_FORWARD);
+    assert(server_decide(&pc, NULL, "gs2.ww.prod.dl.playstation.net", &r) == VERDICT_FORWARD);
 
     puts("test_decide: ok");
     return 0;

@@ -126,7 +126,10 @@ ps5-adblock talks to you through the console's notifications.
 | Notification | Meaning |
 |---|---|
 | `DNS 127.0.0.1 ready, downloading block lists` | First start. DNS works and the lists are on their way. |
-| `blocking N domains, DNS 127.0.0.1` | Blocking is on. Shown once per start, after the lists load. |
+| `blocking N domains, DNS 127.0.0.1` | The lists are loaded. Shown once per start. |
+| `nothing is blocked, the console's Primary DNS is …` | The console is not asking ps5-adblock, so nothing can be blocked. Set **Primary DNS** to `127.0.0.1` as in the [Quick start](#quick-start). Checked every minute. |
+| `Secondary DNS … lets lookups skip the blocker` | Leave **Secondary DNS** empty. |
+| `DNS is set, blocking is on` | The DNS settings were fixed while ps5-adblock was running. |
 | `cannot update list <name>: …` | A list could not be downloaded. The previous copy keeps working, and it retries in 5 minutes. Shown once until the list works again. |
 | `… Check the console date and time.` | Added to the message above when the console clock looks wrong. |
 | `cannot open DNS port 53 …` | Something else is using the DNS port, usually another DNS payload such as nanoDNS. |
@@ -225,6 +228,14 @@ nas.home=192.168.1.10
 ```
 
 ## Troubleshooting
+
+**Nothing is blocked.**
+The console's DNS is not pointing at ps5-adblock, which also shows up as the *nothing is blocked* notification. Set **Primary DNS** to `127.0.0.1` and leave **Secondary DNS** empty, as in the [Quick start](#quick-start). Within a minute you get *DNS is set, blocking is on*. Pages you had already opened may need a reload.
+
+**An ad-block test page gives a low score.**
+Test pages such as [adblock.turtlecute.org](https://adblock.turtlecute.org/) check three things, and DNS blocking can only pass one of them:
+- **Hosts:** requests to real ad and tracker domains. ps5-adblock passes these: 126 of its 128 with the default lists. `ad.doubleclick.net` and `adservice.google.com` are left out of HaGeZi Pro on purpose, because blocking them breaks shopping links.
+- **Script loading and cosmetic filtering:** decoy files and ad boxes served from the test site itself. Only an in-browser ad blocker can stop these, so they always show as *not blocked*.
 
 **The console has no internet.**
 ps5-adblock is not running, usually because the console has just rebooted. Send the payload to port 9021 again, or set **DNS Settings** back to **Automatic** to get online without it.

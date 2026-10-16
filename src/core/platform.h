@@ -28,6 +28,10 @@ int plat_find_pid(const char *name);
  * a test can play a stuck instance). 0 on success. */
 int plat_kill(int pid);
 
+/* The DNS servers the console's network settings use, as IPv4 text ("" when
+ * unset). -1 when unknown: no network yet, or the host build. */
+int plat_console_dns(char primary[16], char secondary[16]);
+
 /* On-screen toast (host: a line on stderr). */
 void plat_notify(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 

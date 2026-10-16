@@ -23,6 +23,16 @@ static config_t cfg; /* large: static, not on the stack */
 static server_t srv;
 static updater_t updater;
 
+/* The console's DNS settings are checked this often, so fixing them while
+ * the payload runs is confirmed within a minute. */
+#define CONSOLE_DNS_CHECK_MS 60000
+
+static void check_console_dns(const config_t *c, char *state) {
+    char primary[16], secondary[16];
+    if (plat_console_dns(primary, secondary) == 0)
+        runtime_dns_check(c, primary, secondary, state, RUNTIME_DNS_STATE_LEN);
+}
+
 static void on_signal(int sig) {
     (void)sig;
     running = 0;
@@ -96,9 +106,16 @@ int main(void) {
     updater_init(&updater, &cfg, dir);
     (void)updater_start(&updater);
 
+    char dns_state[RUNTIME_DNS_STATE_LEN] = "";
+    int64_t next_dns_check = 0;
     while (running) {
         server_poll(&srv, 1000);
-        runtime_log_tick(now_ms());
+        int64_t now = now_ms();
+        runtime_log_tick(now);
+        if (now >= next_dns_check) {
+            check_console_dns(&cfg, dns_state);
+            next_dns_check = now + CONSOLE_DNS_CHECK_MS;
+        }
     }
 
     log_printf("shutting down");

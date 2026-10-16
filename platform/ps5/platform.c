@@ -33,10 +33,18 @@ typedef struct {
 
 int sceNetInit(void);
 int sceNetTerm(void);
+int sceNetCtlInit(void);
+void sceNetCtlTerm(void);
+int sceNetCtlGetInfo(int code, void *info);
+/* sceNetCtlGetInfo codes and the size of its info union (OpenOrbis NetCtl.h). */
+#define NET_CTL_INFO_PRIMARY_DNS 17
+#define NET_CTL_INFO_SECONDARY_DNS 18
+#define NET_CTL_INFO_SIZE 512
 int sceNetPoolCreate(const char *name, int size, int flags);
 int sceNetPoolDestroy(int memid);
 
 static int net_pool = -1;
+static int net_ctl = 0;
 
 int plat_init(void) {
     (void)syscall(SYS_thr_set_name, -1, PROCESS_NAME);
@@ -55,10 +63,15 @@ int plat_init(void) {
         (void)sceNetTerm();
         return -1;
     }
+    net_ctl = sceNetCtlInit() >= 0; /* only for the DNS settings check: not fatal */
     return 0;
 }
 
 void plat_fini(void) {
+    if (net_ctl) {
+        sceNetCtlTerm();
+        net_ctl = 0;
+    }
     if (net_pool >= 0) {
         (void)sceNetPoolDestroy(net_pool);
         net_pool = -1;
@@ -67,6 +80,23 @@ void plat_fini(void) {
 }
 
 const char *plat_data_dir(void) { return "/data/ps5-adblock"; }
+
+static int net_ctl_text(int code, char out[16]) {
+    char info[NET_CTL_INFO_SIZE] = {0};
+    out[0] = '\0';
+    if (sceNetCtlGetInfo(code, info) != 0)
+        return -1;
+    memcpy(out, info, 15);
+    out[15] = '\0';
+    return 0;
+}
+
+int plat_console_dns(char primary[16], char secondary[16]) {
+    if (!net_ctl || net_ctl_text(NET_CTL_INFO_PRIMARY_DNS, primary) != 0)
+        return -1;
+    (void)net_ctl_text(NET_CTL_INFO_SECONDARY_DNS, secondary); /* "" when unset */
+    return 0;
+}
 
 int plat_dns_port(void) { return 53; }
 

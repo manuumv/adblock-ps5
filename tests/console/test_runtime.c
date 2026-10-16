@@ -99,10 +99,62 @@ static void test_log_flush(void) {
     unlink(last);
 }
 
+/* Runs runtime_dns_check with notifications captured into out. */
+static void dns_check(const char *primary, const char *secondary, char *state, char *out, size_t n) {
+    char path[256];
+    snprintf(path, sizeof path, "%s/dns.txt", dir);
+    int fd = open(path, O_RDWR | O_CREAT | O_TRUNC, 0600);
+    int saved = dup(2);
+    dup2(fd, 2);
+    runtime_dns_check(&cfg, primary, secondary, state, RUNTIME_DNS_STATE_LEN);
+    fflush(stderr);
+    dup2(saved, 2);
+    close(saved);
+    close(fd);
+    out[0] = '\0';
+    FILE *f = fopen(path, "r");
+    size_t got = fread(out, 1, n - 1, f);
+    out[got] = '\0';
+    fclose(f);
+    unlink(path);
+}
+
+static void test_console_dns_check(void) {
+    char state[RUNTIME_DNS_STATE_LEN] = "", out[2048];
+    inet_pton(AF_INET, "127.0.0.1", &cfg.bind);
+
+    /* Already right at start: the ready notice says enough. */
+    dns_check("127.0.0.1", "", state, out, sizeof out);
+    assert(out[0] == '\0');
+
+    /* DNS from the router: no lookup reaches the blocker. Said once, with the fix. */
+    dns_check("192.168.1.1", "", state, out, sizeof out);
+    assert(strstr(out, "nothing is blocked") && strstr(out, "192.168.1.1") && strstr(out, "Primary DNS"));
+    dns_check("192.168.1.1", "", state, out, sizeof out);
+    assert(out[0] == '\0');
+
+    /* Fixed while running: confirmed once. An empty secondary reads as 0.0.0.0. */
+    dns_check("127.0.0.1", "0.0.0.0", state, out, sizeof out);
+    assert(strstr(out, "blocking is on"));
+    dns_check("127.0.0.1", "", state, out, sizeof out);
+    assert(out[0] == '\0');
+
+    /* A public secondary lets lookups skip the blocker. */
+    dns_check("127.0.0.1", "8.8.8.8", state, out, sizeof out);
+    assert(strstr(out, "Secondary DNS") && strstr(out, "8.8.8.8"));
+
+    /* Serving the LAN (bind=0.0.0.0): the console may use any of its own addresses. */
+    cfg.bind.s_addr = htonl(INADDR_ANY);
+    state[0] = '\0';
+    dns_check("192.168.1.50", "", state, out, sizeof out);
+    assert(out[0] == '\0');
+}
+
 int main(void) {
     assert(mkdtemp(dir));
     test_notices();
     test_log_flush();
+    test_console_dns_check();
     rmdir(dir);
     puts("test_runtime: ok");
     return 0;

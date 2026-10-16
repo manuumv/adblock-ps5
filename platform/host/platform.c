@@ -69,6 +69,11 @@ static const char *const *env_list(const char *var, char *buf, size_t n, const c
     return out;
 }
 
+int plat_console_dns(char primary[16], char secondary[16]) {
+    (void)primary, (void)secondary;
+    return -1; /* a computer's resolver settings are not ours to judge */
+}
+
 const char *const *plat_hen_dirs(void) {
     static char buf[4096];
     static const char *list[MAX_PATHS + 1];

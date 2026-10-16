@@ -219,6 +219,35 @@ int runtime_ready_notice(const config_t *c, size_t domains) {
     return 1;
 }
 
+void runtime_dns_check(const config_t *c, const char *primary, const char *secondary, char *state,
+                       size_t n) {
+    if (c->bind.s_addr == htonl(INADDR_ANY))
+        return;
+    char ip[INET_ADDRSTRLEN], msg[RUNTIME_DNS_STATE_LEN] = "";
+    inet_ntop(AF_INET, &c->bind, ip, sizeof ip);
+    if (strcmp(primary, ip) != 0)
+        snprintf(msg, sizeof msg,
+                 "ps5-adblock: nothing is blocked, the console's Primary DNS is %s. Set it to %s in "
+                 "Settings > Network > Settings > Set Up Internet Connection > Advanced Settings > "
+                 "DNS Settings > Manual.",
+                 primary[0] ? primary : "empty", ip);
+    else if (secondary[0] && strcmp(secondary, "0.0.0.0") != 0 && strcmp(secondary, ip) != 0)
+        snprintf(msg, sizeof msg,
+                 "ps5-adblock: Secondary DNS %s lets lookups skip the blocker. Leave it empty in "
+                 "DNS Settings.",
+                 secondary);
+    if (strcmp(msg, state) == 0)
+        return;
+    if (msg[0]) {
+        log_printf("%s", msg);
+        plat_notify("%s", msg);
+    } else {
+        log_printf("console DNS points at ps5-adblock");
+        plat_notify("ps5-adblock: DNS is set, blocking is on");
+    }
+    snprintf(state, n, "%s", msg);
+}
+
 void runtime_port_error_notice(int port) {
     plat_notify("ps5-adblock: cannot open DNS port %d. Set DNS to Automatic to get online, "
                 "then send the payload again.",

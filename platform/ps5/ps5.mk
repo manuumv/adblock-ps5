@@ -25,7 +25,7 @@ $(PS5_ELF): $(SRCS) src/main.c platform/ps5/platform.c $(HDRS) build/ps5/gen/ca_
 	@mkdir -p $(@D)
 	$(PS5_CC) $(CFLAGS_COMMON) -O2 -Ibuild/ps5/gen -DADBLOCK_CA_BUNDLE $$($(PS5_PKGCONF) --cflags libcurl) \
 		-o $@ $(SRCS) src/main.c platform/ps5/platform.c \
-		$$($(PS5_PKGCONF) --static --libs libcurl) -lSceNet -lpthread
+		$$($(PS5_PKGCONF) --static --libs libcurl) -lSceNet -lSceNetCtl -lpthread
 	$(PS5_STRIP) --strip-all $@
 
 deploy: $(PS5_ELF)

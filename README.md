@@ -81,9 +81,7 @@ DNS blocking works on whole domains. It is very effective against ad networks bu
    ```sh
    nc -w 1 <ps5-ip> 9021 < ps5-adblock.elf
    ```
-3. **Point the console's DNS at itself.** Go to **Settings › Network › Settings › Set Up Internet Connection**, select your connection, then **Advanced Settings › DNS Settings › Manual**:
-   - **Primary DNS:** `127.0.0.1`
-   - **Secondary DNS:** leave it empty.
+3. **Keep your network settings as they are.** While it runs, ps5-adblock points the console's DNS at itself, and the console gets its own DNS back when the payload stops or the console reboots. See [The console's DNS](#the-consoles-dns).
 
 That's it. You will see **"DNS 127.0.0.1 ready, downloading block lists"**. About half a minute later you will see **"blocking 199603 domains and firmware updates"**, and ads are gone.
 
@@ -113,31 +111,24 @@ Every time it starts, ps5-adblock copies itself into the other HEN's folder too,
 
 Send `ps5-adblock.elf` to your loader on port 9021 after each reboot. Nothing else is needed. Sending it again while it runs replaces the running copy, which is also how you update it.
 
-### Setting the DNS
+### The console's DNS
 
-The DNS settings from the [Quick start](#quick-start) are what send the console's lookups to ps5-adblock. A few notes:
+Every lookup has to reach ps5-adblock for it to block anything. You do not need to change the network settings for that: once the payload is running, it points the console's DNS at itself (`127.0.0.1`), without touching the settings.
 
-- **Leave Secondary DNS empty**, unless it is a DNS that blocks Sony (next section). A normal resolver there lets the console skip the blocker, and reach Sony's update servers before the jailbreak.
-- **After a reboot the console has no DNS until ps5-adblock runs again.** Jailbreak first. If your jailbreak chain needs the internet before ps5-adblock starts, set **DNS Settings** to **Automatic** for that step and back to **Manual** afterwards.
+- **Before the jailbreak**, the console uses the DNS from its network settings, so a jailbreak that needs the internet keeps working.
+- **While ps5-adblock runs**, every lookup goes through it. If the network reconnects, it takes the DNS over again within a minute.
+- **When it stops, or the console reboots**, the console is back on the DNS from its settings.
 
-### Already using a DNS that blocks Sony?
+`dns_redirect=0` in `[general]` turns this off.
 
-Some people point the console at a public DNS that refuses Sony's servers, so it can never update, even without a jailbreak. Keep it: make it ps5-adblock's fallback and its upstream.
-
-| Console setting | Value |
-|---|---|
-| Primary DNS | `127.0.0.1` |
-| Secondary DNS | your Sony-blocking DNS |
+**Recommended: a DNS that blocks Sony in the network settings.** Before the jailbreak ps5-adblock is not running yet, so nothing stops a firmware update except the console's own DNS. Some public DNS servers refuse Sony's update and PSN servers: put one in **Settings › Network › Settings › Set Up Internet Connection ›** your connection **› Advanced Settings › DNS Settings › Manual**, and list it in `config.ini` too, so ps5-adblock passes lookups on to it:
 
 ```ini
 [upstream]
 server=<your Sony-blocking DNS>
 ```
 
-- **Before the jailbreak**, nothing answers on `127.0.0.1`, so the console uses your DNS: online, and still no updates.
-- **With ps5-adblock running**, it answers every lookup itself: ads and updates blocked, everything else passed on to your DNS.
-
-If the console ever asks the secondary while ps5-adblock is running, that lookup skips ad blocking, but updates stay blocked by your DNS. A secondary that is also listed in `[upstream]` does not trigger the *Secondary DNS* warning.
+**If you see *no lookup reached the blocker*,** this console did not accept the redirect. Set **Primary DNS** to `127.0.0.1` and leave **Secondary DNS** empty instead. Then the console has no internet before ps5-adblock runs, and so cannot update either. Please report it, with `/data/ps5-adblock/last.log`.
 
 ## Notifications
 
@@ -147,8 +138,9 @@ ps5-adblock talks to you through the console's notifications.
 |---|---|
 | `DNS 127.0.0.1 ready, downloading block lists` | First start. DNS works and the lists are on their way. |
 | `blocking N domains and firmware updates, DNS 127.0.0.1` | The lists are loaded and firmware updates are blocked. Shown once per start. Without *and firmware updates*, `block_updates=0` is set. |
-| `nothing is blocked, the console's Primary DNS is …` | The console is not asking ps5-adblock, so nothing can be blocked. Set **Primary DNS** to `127.0.0.1` as in the [Quick start](#quick-start). Checked every minute. |
-| `Secondary DNS … lets lookups skip the blocker` | Leave **Secondary DNS** empty, or, if it is a DNS that blocks Sony, add it to `[upstream]` (see [above](#already-using-a-dns-that-blocks-sony)). |
+| `no lookup reached the blocker after redirecting the console's DNS` | This console did not accept the DNS redirect. Set the DNS by hand, see [The console's DNS](#the-consoles-dns). |
+| `nothing is blocked, the console's Primary DNS is …` | Only with `dns_redirect=0`, or when the redirect failed: the console is not asking ps5-adblock. Set **Primary DNS** to `127.0.0.1`. Checked every minute. |
+| `Secondary DNS … lets lookups skip the blocker` | Same cases: leave **Secondary DNS** empty, or list it in `[upstream]` if it is a DNS that blocks Sony. |
 | `DNS is set, blocking is on` | The DNS settings were fixed while ps5-adblock was running. |
 | `cannot update list <name>: …` | A list could not be downloaded. The previous copy keeps working, and it retries in 5 minutes. Shown once until the list works again. |
 | `… Check the console date and time.` | Added to the message above when the console clock looks wrong. |
@@ -227,6 +219,7 @@ Settings live in `/data/ps5-adblock/config.ini`, which is created with sensible 
 |---|---|---|---|
 | `[general]` | `debug` | `0` | `1` logs every query |
 | | `quiet` | `0` | `1` hides the start notifications. Errors are always shown |
+| | `dns_redirect` | `1` | Point the console's DNS at ps5-adblock while it runs, without changing the network settings (see [The console's DNS](#the-consoles-dns)) |
 | | `autostart` | `1` | Keep the payload in every HEN's autostart folder. `0` removes it from autostart |
 | | `bind` | `127.0.0.1` | IPv4 address to listen on. `0.0.0.0` serves your whole local network. Only private and link-local clients are ever answered |
 | | `bind6` | `::1` | IPv6 address to listen on, or `off` |
@@ -254,7 +247,7 @@ nas.home=192.168.1.10
 ## Troubleshooting
 
 **Nothing is blocked.**
-The console's DNS is not pointing at ps5-adblock, which also shows up as the *nothing is blocked* notification. Set **Primary DNS** to `127.0.0.1` and leave **Secondary DNS** empty, as in the [Quick start](#quick-start). Within a minute you get *DNS is set, blocking is on*. Pages you had already opened may need a reload.
+The console's lookups are not reaching ps5-adblock, which also shows up as the *no lookup reached the blocker* or *nothing is blocked* notification. Set **Primary DNS** to `127.0.0.1` and leave **Secondary DNS** empty, see [The console's DNS](#the-consoles-dns). Within a minute you get *DNS is set, blocking is on*. Pages you had already opened may need a reload.
 
 **An ad-block test page gives a low score.**
 Test pages such as [adblock.turtlecute.org](https://adblock.turtlecute.org/) check three things, and DNS blocking can only pass one of them:
@@ -262,7 +255,7 @@ Test pages such as [adblock.turtlecute.org](https://adblock.turtlecute.org/) che
 - **Script loading and cosmetic filtering:** decoy files and ad boxes served from the test site itself. Only an in-browser ad blocker can stop these, so they always show as *not blocked*.
 
 **The console has no internet.**
-ps5-adblock is not running, usually because the console has just rebooted. Send the payload to port 9021 again, or set **DNS Settings** back to **Automatic** to get online without it.
+If you set **Primary DNS** to `127.0.0.1` by hand, ps5-adblock is not running, usually because the console has just rebooted: send the payload again. If ps5-adblock stopped unexpectedly while redirecting the DNS, reconnect the network or reboot to get the DNS from your settings back.
 
 **"cannot open DNS port 53".**
 Another DNS payload (for example nanoDNS) is already running. Stop it or remove it from the HEN's autostart, then send ps5-adblock again.
@@ -282,7 +275,7 @@ The log of the current session is written to `/data/ps5-adblock/last.log`, and t
 ## Uninstall
 
 1. Set `autostart=0` in `/data/ps5-adblock/config.ini` and send the payload once. This removes it from the HEN's autostart. Alternatively, delete `ps5-adblock.elf*` from the HEN `payloads/` folders over FTP.
-2. Set **DNS Settings** back to **Automatic**.
+2. If you set **Primary DNS** to `127.0.0.1` by hand, set your DNS back in the network settings.
 3. Optionally, delete `/data/ps5-adblock/`, which holds your configuration, lists and logs.
 
 ---

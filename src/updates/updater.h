@@ -13,8 +13,10 @@
 #include "core/config.h"
 #include "dns/forward.h"
 
-#define UPDATER_FIRST_DELAY_MS (2 * 60 * 1000)
+#define UPDATER_FIRST_DELAY_MS (2 * 60 * 1000) /* lets the network come up after boot */
+#define UPDATER_SOON_MS (15 * 1000)            /* first pass when a list was never downloaded */
 #define UPDATER_CHECK_MS (60 * 60 * 1000)
+#define UPDATER_RETRY_MS (5 * 60 * 1000)       /* next pass after a failure */
 #define UPDATER_MAX_BYTES (64L * 1024 * 1024)
 #define UPDATER_TIMEOUT_S 120L
 
@@ -35,7 +37,8 @@ typedef struct {
     atomic_int stop; /* read by the thread and libcurl's progress callback without the lock */
 } updater_t;
 
-/* Prepares u with production timings. */
+/* Prepares u with production timings: the first pass comes UPDATER_SOON_MS
+ * after start if a list is missing from disk, UPDATER_FIRST_DELAY_MS otherwise. */
 void updater_init(updater_t *u, const config_t *cfg, const char *data_dir);
 
 /* Starts the thread unless there is nothing to do (no lists or
@@ -46,7 +49,8 @@ int updater_start(updater_t *u);
 void updater_stop(updater_t *u);
 
 /* One pass: downloads every list that is missing or older than update_hours,
- * as of now (seconds since the epoch). Runs on the caller's thread. */
-void updater_run_once(updater_t *u, int64_t now);
+ * as of now (seconds since the epoch). Runs on the caller's thread. Returns
+ * the number of lists that failed. */
+int updater_run_once(updater_t *u, int64_t now);
 
 #endif

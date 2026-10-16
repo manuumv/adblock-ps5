@@ -23,15 +23,18 @@ int runtime_take_over(const char *name, int timeout_ms);
  * folders, copies and own_copy. Copies keep the source's mtime, so a second
  * run changes nothing. !enable: removes the markers only.
  * Returns the number of files written or removed, AUTOSTART_NO_COPY when no
- * copy exists on disk yet (sent over the network), or -1 on an error (no HEN
- * folder, I/O); msg gets a one-line summary. Errors in one folder do not stop
+ * copy exists on disk yet (sent over the network), or -1 on an I/O error; msg
+ * gets a one-line summary. No HEN folder is not an error: ps5-adblock runs
+ * without one, it just cannot start itself after a reboot. Errors in one folder do not stop
  * the others. */
 #define AUTOSTART_NO_COPY (-2)
 int autostart_sync(int enable, const char *const *hen_dirs, const char *const *copies,
                    const char *own_copy, char *msg, size_t n);
 
-/* "ps5-adblock <version>: blocking <n> domains, DNS <bind>", unless quiet. */
-void runtime_ready_notice(const config_t *c, size_t domains);
+/* "ps5-adblock <version>: blocking <n> domains, DNS <bind>", unless quiet.
+ * With no domains while [lists] are about to download it says so instead and
+ * returns 0: call it again on the next load. 1 once nothing is left to announce. */
+int runtime_ready_notice(const config_t *c, size_t domains);
 /* Always shown: the DNS port could not be opened. */
 void runtime_port_error_notice(int port);
 

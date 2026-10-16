@@ -166,10 +166,8 @@ static void maybe_reload(server_t *s) {
             log_printf("blocking %zu domains", s->active->blocked.count);
             atomic_store(&s->n_domains, s->active->blocked.count);
             atomic_store(&s->n_allowed_domains, s->active->allowed.count);
-            if (!s->ready_notified) {
-                runtime_ready_notice(s->cfg, s->active->blocked.count);
-                s->ready_notified = 1;
-            }
+            if (!s->ready_notified)
+                s->ready_notified = runtime_ready_notice(s->cfg, s->active->blocked.count);
         } else {
             /* Retry later even if nothing changes, but not on every check. */
             s->loaded_print = ~s->loaded_print;

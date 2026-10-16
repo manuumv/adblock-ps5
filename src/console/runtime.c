@@ -133,8 +133,9 @@ int autostart_sync(int enable, const char *const *hen_dirs, const char *const *c
     int changed = 0;
 
     if (!hen_dirs[0]) {
-        snprintf(msg, n, "autostart: no HEN folder found (etaHEN or onionHEN)");
-        return enable ? -1 : 0;
+        snprintf(msg, n, "autostart: no etaHEN or onionHEN payload folder, start ps5-adblock "
+                         "from your loader after each reboot");
+        return 0;
     }
 
     if (!enable) {
@@ -205,12 +206,17 @@ int autostart_sync(int enable, const char *const *hen_dirs, const char *const *c
 
 /* --- notices --- */
 
-void runtime_ready_notice(const config_t *c, size_t domains) {
+int runtime_ready_notice(const config_t *c, size_t domains) {
     if (c->quiet)
-        return;
+        return 1;
     char ip[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &c->bind, ip, sizeof ip);
+    if (domains == 0 && c->list_count > 0 && c->update_hours > 0) {
+        plat_notify("ps5-adblock %s: DNS %s ready, downloading block lists", ADBLOCK_VERSION, ip);
+        return 0;
+    }
     plat_notify("ps5-adblock %s: blocking %zu domains, DNS %s", ADBLOCK_VERSION, domains, ip);
+    return 1;
 }
 
 void runtime_port_error_notice(int port) {

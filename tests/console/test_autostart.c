@@ -105,10 +105,10 @@ int main(void) {
     assert(exists(q));
     assert(autostart_sync(0, hens, copies, own, msg, sizeof msg) == 0);
 
-    /* No HEN folder found: that is an error, not "autostart on". */
+    /* No HEN: ps5-adblock works without one, it just cannot start itself. */
     const char *none[] = {NULL};
-    assert(autostart_sync(1, none, copies, own, msg, sizeof msg) == -1);
-    assert(strstr(msg, "no HEN"));
+    assert(autostart_sync(1, none, copies, own, msg, sizeof msg) == 0);
+    assert(strstr(msg, "loader"));
 
     /* One folder failing does not stop the others, and the error names it. */
     if (geteuid() != 0) { /* root writes anywhere */

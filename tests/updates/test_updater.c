@@ -91,7 +91,7 @@ static void test_download_schedule_and_304(void) {
     run_capture(now, notices, sizeof notices);
     read_file(p, buf, sizeof buf);
     assert(!strcmp(buf, "a.example\nb.example.org\n"));
-    assert(strstr(notices, "good") && strstr(notices, "2 domains")); /* first download is announced */
+    assert(notices[0] == '\0'); /* the server announces the domain count once loaded */
     assert(dns_queries > 0);
 
     /* Fresh: not downloaded again (a local edit survives). */
@@ -150,7 +150,7 @@ static void test_failures_keep_old_and_notify_once(void) {
     /* flaky recovers, then fails again: it is announced again. */
     fixture_write(&fx, "list.txt", "c.example\n");
     run_capture(now + 60 * 3600, notices, sizeof notices);
-    assert(strstr(notices, "flaky") && strstr(notices, "1 domains")); /* its first download */
+    assert(!strstr(notices, "flaky")); /* recovered quietly */
     unlink(flaky_src);
     run_capture(now + 90 * 3600, notices, sizeof notices);
     assert(strstr(notices, "flaky"));
@@ -195,6 +195,27 @@ static void test_disabled(void) {
     updater_init(&idle, &cfg, data);
     assert(updater_start(&idle) == 0 && !idle.running);
     cfg.update_hours = 24;
+}
+
+static void test_first_pass_soon_when_lists_missing(void) {
+    /* A list nobody has downloaded yet is fetched within seconds; once every
+     * list is on disk, the first pass waits for the network to come up. */
+    cfg.list_count = 1;
+    set_list(0, "fresh-install", "/list.txt");
+    updater_t u;
+    updater_init(&u, &cfg, data);
+    assert(u.first_delay_ms == UPDATER_SOON_MS);
+    set_list(0, "good", "/list.txt"); /* downloaded by the first test */
+    updater_init(&u, &cfg, data);
+    assert(u.first_delay_ms == UPDATER_FIRST_DELAY_MS);
+}
+
+static void test_run_once_counts_failures(void) {
+    cfg.list_count = 2;
+    set_list(0, "missing-a", "/missing");
+    set_list(1, "missing-b", "/missing");
+    up.failure_notified[0] = up.failure_notified[1] = 0;
+    assert(updater_run_once(&up, 2400000000) == 2); /* the thread retries sooner after failures */
 }
 
 static void test_dns_unaffected_by_slow_download(void) {
@@ -278,6 +299,8 @@ int main(void) {
     test_failures_keep_old_and_notify_once();
     test_bad_timestamps_are_stale();
     test_disabled();
+    test_first_pass_soon_when_lists_missing();
+    test_run_once_counts_failures();
     test_dns_unaffected_by_slow_download();
 
     dns_stop = 1;

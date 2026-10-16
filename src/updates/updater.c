@@ -94,10 +94,15 @@ static void failed(updater_t *u, size_t i, const char *error, int clock_error) {
                 clock_error ? ". Check the console date and time." : "");
 }
 
-static void update_one(updater_t *u, size_t i, int64_t now) {
+static void list_file(const updater_t *u, size_t i, char *out, size_t n) {
+    snprintf(out, n, "%s/lists/%s.txt", u->data_dir, u->cfg->lists[i].name);
+}
+
+/* 0 when the list is fresh, updated or unchanged; -1 on a failure. */
+static int update_one(updater_t *u, size_t i, int64_t now) {
     const list_source_t *src = &u->cfg->lists[i];
     char txt[PATH_MAX], tmp[PATH_MAX], meta_path[PATH_MAX];
-    snprintf(txt, sizeof txt, "%s/lists/%s.txt", u->data_dir, src->name);
+    list_file(u, i, txt, sizeof txt);
     snprintf(tmp, sizeof tmp, "%s/lists/.%s.tmp", u->data_dir, src->name);
     snprintf(meta_path, sizeof meta_path, "%s/lists/.%s.meta", u->data_dir, src->name);
 
@@ -108,7 +113,7 @@ static void update_one(updater_t *u, size_t i, int64_t now) {
      * counts as stale; checking it first also keeps the subtraction in range. */
     int sane = meta.last_success >= 0 && meta.last_success <= now;
     if (existed && sane && now - meta.last_success < (int64_t)u->cfg->update_hours * 3600)
-        return; /* fresh */
+        return 0; /* fresh */
 
     http_get_t req = {
         .url = src->url,
@@ -126,7 +131,7 @@ static void update_one(updater_t *u, size_t i, int64_t now) {
     if (http_download(&req, &r) != 0) {
         if (!u->stop)
             failed(u, i, r.error, r.clock_error);
-        return;
+        return -1;
     }
 
     if (!r.not_modified) {
@@ -135,38 +140,50 @@ static void update_one(updater_t *u, size_t i, int64_t now) {
         if (list_read_file(tmp, count_domain, &domains, &st) != 0 || domains == 0) {
             unlink(tmp);
             failed(u, i, "the download contains no domains", 0);
-            return;
+            return -1;
         }
         if (rename(tmp, txt) != 0) {
             unlink(tmp);
             failed(u, i, strerror(errno), 0);
-            return;
+            return -1;
         }
         snprintf(meta.etag, sizeof meta.etag, "%s", r.etag);
         snprintf(meta.last_modified, sizeof meta.last_modified, "%s", r.last_modified);
+        /* No notice: the server announces the domain count once the list loads. */
         log_printf("list %s: updated, %zu domains (%ld bytes)", src->name, domains, r.bytes);
-        if (!existed && !u->cfg->quiet)
-            plat_notify("ps5-adblock: downloaded %s (%zu domains)", src->name, domains);
     } else {
         log_printf("list %s: unchanged", src->name);
     }
     meta.last_success = now;
     write_meta(meta_path, &meta);
     u->failure_notified[i] = 0;
+    return 0;
 }
 
-void updater_run_once(updater_t *u, int64_t now) {
+int updater_run_once(updater_t *u, int64_t now) {
+    int failures = 0;
     if (u->cfg->update_hours <= 0)
-        return;
+        return 0;
     for (size_t i = 0; i < u->cfg->list_count && !u->stop; i++)
-        update_one(u, i, now);
+        failures += update_one(u, i, now) != 0;
+    return failures;
+}
+
+static int any_list_missing(const updater_t *u) {
+    char txt[PATH_MAX];
+    for (size_t i = 0; i < u->cfg->list_count; i++) {
+        list_file(u, i, txt, sizeof txt);
+        if (access(txt, F_OK) != 0)
+            return 1;
+    }
+    return 0;
 }
 
 void updater_init(updater_t *u, const config_t *cfg, const char *data_dir) {
     memset(u, 0, sizeof *u);
     u->cfg = cfg;
     u->data_dir = data_dir;
-    u->first_delay_ms = UPDATER_FIRST_DELAY_MS;
+    u->first_delay_ms = any_list_missing(u) ? UPDATER_SOON_MS : UPDATER_FIRST_DELAY_MS;
     u->check_ms = UPDATER_CHECK_MS;
     fwd_init(&u->fwd);
 }
@@ -214,9 +231,10 @@ static void *run(void *arg) {
     updater_t *u = arg;
     if (wait_ms(u, u->first_delay_ms))
         return NULL;
+    int failures;
     do {
-        updater_run_once(u, (int64_t)time(NULL));
-    } while (!wait_ms(u, u->check_ms));
+        failures = updater_run_once(u, (int64_t)time(NULL));
+    } while (!wait_ms(u, failures ? UPDATER_RETRY_MS : u->check_ms));
     return NULL;
 }
 

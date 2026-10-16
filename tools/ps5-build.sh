@@ -9,4 +9,5 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 image=ps5-adblock-sdk
 
 docker build -q -t "$image" "$root/platform/ps5/docker" >/dev/null
-docker run --rm -v "$root":/src -w /src "$image" make "${@:-ps5}"
+# As the calling user, so build/ is not left owned by root on Linux hosts.
+docker run --rm --user "$(id -u):$(id -g)" -v "$root":/src -w /src "$image" make "${@:-ps5}"
